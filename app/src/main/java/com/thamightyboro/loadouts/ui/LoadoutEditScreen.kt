@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -31,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -90,6 +92,10 @@ fun LoadoutEditScreen(vm: AppViewModel, existing: Loadout?, parts: List<Part>, o
                 title = { Text(if (existing == null) "New loadout" else "Edit loadout") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
+                    IconButton(
+                        onClick = { vm.exportImage(current.copy(slots = slots.filterKeys { it in current.activeSlots() }), byId) },
+                        enabled = !vm.exporting,
+                    ) { Icon(Icons.Filled.Image, "Export as image") }
                     if (existing != null) IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Filled.Delete, "Delete") }
                     TextButton(onClick = { save() }) { Text("Save") }
                 },
@@ -150,6 +156,14 @@ fun LoadoutEditScreen(vm: AppViewModel, existing: Loadout?, parts: List<Part>, o
             }
 
             OutlinedTextField(notes, { notes = it }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+            OutlinedButton(
+                onClick = { vm.exportImage(current.copy(slots = slots.filterKeys { it in current.activeSlots() }), byId) },
+                enabled = !vm.exporting,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Filled.Image, null)
+                Text(if (vm.exporting) "  Creating image…" else "  Export as image (1920×1080)")
+            }
             Button(onClick = { save() }, modifier = Modifier.fillMaxWidth()) { Text("Save loadout") }
         }
     }
