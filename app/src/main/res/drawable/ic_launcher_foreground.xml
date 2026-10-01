@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simple starfighter-ish glyph: hexagonal wing panels around a round cockpit -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#E8C547"
+        android:pathData="M30,32 L38,32 L38,76 L30,76 Z" />
+    <path android:fillColor="#E8C547"
+        android:pathData="M70,32 L78,32 L78,76 L70,76 Z" />
+    <path android:fillColor="#E8C547"
+        android:pathData="M38,51 L70,51 L70,57 L38,57 Z" />
+    <path android:fillColor="#7FD4C1"
+        android:pathData="M54,44 A10,10 0 1,1 53.99,44 Z" />
+    <path android:fillColor="#0E1A1C"
+        android:pathData="M54,49 A5,5 0 1,1 53.99,49 Z" />
+</vector>
