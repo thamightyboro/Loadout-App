@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Loadouts" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#0E1A1C</item>
+        <item name="android:navigationBarColor">#0E1A1C</item>
+        <item name="android:windowBackground">#0E1A1C</item>
+    </style>
+</resources>
