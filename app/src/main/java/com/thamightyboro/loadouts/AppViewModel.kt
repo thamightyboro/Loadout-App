@@ -10,6 +10,9 @@ import androidx.lifecycle.viewModelScope
 import com.thamightyboro.loadouts.data.Loadout
 import com.thamightyboro.loadouts.data.Part
 import com.thamightyboro.loadouts.data.Store
+import com.thamightyboro.loadouts.export.LoadoutImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.thamightyboro.loadouts.ocr.Scanner
 import kotlinx.coroutines.launch
 
@@ -52,6 +55,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun deletePart(id: String) = viewModelScope.launch { store.deletePart(id) }
     fun saveLoadout(l: Loadout) = viewModelScope.launch { store.upsertLoadout(l) }
     fun deleteLoadout(id: String) = viewModelScope.launch { store.deleteLoadout(id) }
+
+    var exporting by mutableStateOf(false)
+        private set
+
+    /** Draws the loadout as a 1920x1080 image, saves it to the gallery and opens the share sheet. */
+    fun exportImage(loadout: Loadout, parts: Map<String, Part>) {
+        if (exporting) return
+        exporting = true
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { LoadoutImage.save(getApplication(), loadout, parts) }
+            }.onSuccess { saved ->
+                if (saved.inGallery) message = "Saved to Pictures/SWG Loadouts"
+                LoadoutImage.share(getApplication(), saved.shareUri)
+            }.onFailure { message = "Image export failed: ${it.message}" }
+            exporting = false
+        }
+    }
 
     fun exportJson() = store.exportJson()
     fun importJson(text: String) = viewModelScope.launch {
