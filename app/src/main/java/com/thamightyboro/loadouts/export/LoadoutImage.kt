@@ -91,10 +91,64 @@ object LoadoutImage {
         return first + stats.filter { it !in first }
     }
 
+    // ---- Card content: every stat, every quality, and notes ----
+
+    private sealed interface Cell
+    private class StatCell(val label: String, val value: String, val quality: Boolean) : Cell
+    private object SectionCell : Cell
+    private class NoteCell(val text: String) : Cell
+    private class Placed(val cell: Cell, val row: Int, val col: Int, val span: Int)
+
+    /** "Weapon Shield Effectiveness Quality" -> "Shield Effectiveness" (the section header says Quality). */
+    private fun qualityLabel(label: String): String {
+        val base = label.replace(Regex("(?i)\\s*quality\\s*$"), "").replace(Regex("(?i)^weapon\\s+"), "").trim()
+        return qualityNames[base.lowercase()] ?: shortLabel(base)
+    }
+
+    private val qualityNames = mapOf(
+        "shield effectiveness" to "Vs. Shields",
+        "armor effectiveness" to "Vs. Armor",
+        "energy maintenance" to "Drain",
+        "energy/shot" to "Energy/Shot",
+        "refire rate" to "Refire Rate",
+        "min damage" to "Min Damage",
+        "max damage" to "Max Damage",
+        "energy generation" to "Generation",
+    )
+
+    private fun cellsFor(part: Part): List<Cell> = buildList {
+        orderedStats(part.stats).forEach { add(StatCell(shortLabel(it.label), tidyValue(it.value), false)) }
+        if (part.qualities.isNotEmpty()) {
+            add(SectionCell)
+            part.qualities.forEach { add(StatCell(qualityLabel(it.label), it.value.trim(), true)) }
+        }
+        if (part.notes.isNotBlank()) add(NoteCell(part.notes.replace('\n', ' ').trim()))
+    }
+
+    /** Lays cells into a grid; long values and section rows take a full row. Returns placements and row count. */
+    private fun place(cells: List<Cell>, cols: Int, colW: Float, valueP: TextPaint): Pair<List<Placed>, Int> {
+        val out = mutableListOf<Placed>()
+        var row = 0
+        var col = 0
+        for (cell in cells) {
+            val full = cell !is StatCell || valueP.measureText(cell.value) > colW * 0.55f
+            if (full) {
+                if (col != 0) { row++; col = 0 }
+                out += Placed(cell, row, 0, cols)
+                row++
+            } else {
+                out += Placed(cell, row, col, 1)
+                col++
+                if (col == cols) { row++; col = 0 }
+            }
+        }
+        return out to (if (col == 0) row else row + 1)
+    }
+
     fun render(l: Loadout, parts: Map<String, Part>): Bitmap {
         val bmp = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
-        val pad = 60f
+        val pad = 40f
 
         // Background with a faint grid
         c.drawRect(0f, 0f, W.toFloat(), H.toFloat(), Paint().apply {
@@ -104,21 +158,22 @@ object LoadoutImage {
         for (x in 0..W step 80) c.drawLine(x.toFloat(), 0f, x.toFloat(), H.toFloat(), grid)
         for (y in 0..H step 80) c.drawLine(0f, y.toFloat(), W.toFloat(), y.toFloat(), grid)
 
-        // Header: name + chassis
-        val title = paint(GOLD, 66f, bold)
-        c.drawText(fit(l.name.ifBlank { "Untitled loadout" }, title, 1080f), pad, 118f, title)
-        val sub = paint(TEAL, 28f, bold, 0.12f)
-        c.drawText(fit(l.chassis.ifBlank { "No chassis set" }.uppercase(), sub, 1080f), pad, 166f, sub)
+        // Header: name + chassis (compact, so the slot cards get the room)
+        val title = paint(GOLD, 46f, bold)
+        c.drawText(fit(l.name.ifBlank { "Untitled loadout" }, title, 1100f), pad, 70f, title)
+        val sub = paint(TEAL, 22f, bold, 0.12f)
+        c.drawText(fit(l.chassis.ifBlank { "No chassis set" }.uppercase(), sub, 1100f), pad, 104f, sub)
 
         // Header: summary tiles
         val t = l.totals(parts)
-        val tileW = 220f
-        val tileGap = 20f
+        val tileW = 210f
+        val tileH = 94f
+        val tileGap = 16f
         var tx = W - pad - (tileW * 3 + tileGap * 2)
         val limit = l.massLimit
         val massOver = limit != null && t.mass > limit
         tile(
-            c, tx, 52f, tileW, 130f, "MASS", fmt(t.mass),
+            c, tx, 24f, tileW, tileH, "MASS", fmt(t.mass),
             limit?.let { "of ${fmt(it)}" } ?: "no limit set",
             if (massOver) BAD else TEXT,
             limit?.takeIf { it > 0 }?.let { (t.mass / it).toFloat() },
@@ -127,39 +182,45 @@ object LoadoutImage {
         val gen = t.generation
         val drainOver = gen != null && t.drain > gen
         tile(
-            c, tx, 52f, tileW, 130f, "REACTOR DRAIN", fmt(t.drain),
+            c, tx, 24f, tileW, tileH, "REACTOR DRAIN", fmt(t.drain),
             gen?.let { "of ${fmt(it)} generated" } ?: "no reactor fitted",
             if (drainOver) BAD else TEXT,
             gen?.takeIf { it > 0 }?.let { (t.drain / it).toFloat() },
         )
         tx += tileW + tileGap
-        tile(c, tx, 52f, tileW, 130f, "SLOTS FILLED", "${t.filled} / ${t.total}", "", TEXT, null)
+        tile(c, tx, 24f, tileW, tileH, "SLOTS FILLED", "${t.filled} / ${t.total}", "", TEXT, null)
 
         // Divider
-        c.drawRect(pad, 212f, W - pad, 214f, fill(0x55E8C547))
+        c.drawRect(pad, 132f, W - pad, 134f, fill(0x55E8C547))
 
         // Slot cards
         val slots = l.activeSlots()
         val cols = 4
         val rows = ceil(slots.size / cols.toFloat()).toInt().coerceAtLeast(1)
-        val gap = 20f
-        val top = 240f
-        val bottom = H - 72f
+        val gap = 14f
+        val top = 150f
+        val bottom = H - 40f
         val cardW = (W - 2 * pad - (cols - 1) * gap) / cols
         val cardH = (bottom - top - (rows - 1) * gap) / rows
+        // One text size for every card (tidier): the largest at which every card fits in full.
+        val filled = slots.mapNotNull { l.slots[it]?.let(parts::get) }
+        val innerW = cardW - 32f
+        val size = (20 downTo 8).firstOrNull { sz ->
+            filled.all { layoutFor(cellsFor(it), innerW, cardH, sz.toFloat()) != null }
+        }?.toFloat() ?: 8f
         slots.forEachIndexed { i, slot ->
             val x = pad + (i % cols) * (cardW + gap)
             val y = top + (i / cols) * (cardH + gap)
-            card(c, RectF(x, y, x + cardW, y + cardH), slot.label, l.slots[slot]?.let(parts::get))
+            card(c, RectF(x, y, x + cardW, y + cardH), slot.label, l.slots[slot]?.let(parts::get), size)
         }
 
         // Footer
-        val foot = paint(MUTED, 22f)
+        val foot = paint(MUTED, 18f)
         if (l.notes.isNotBlank()) {
-            c.drawText(fit(l.notes.replace('\n', ' '), foot, 1300f), pad, H - 30f, foot)
+            c.drawText(fit(l.notes.replace('\n', ' '), foot, 1400f), pad, H - 14f, foot)
         }
-        val stamp = "SWG Loadouts · " + SimpleDateFormat("d MMM yyyy", Locale.UK).format(Date())
-        c.drawText(stamp, W - pad - foot.measureText(stamp), H - 30f, foot)
+        val stamp = "SWG Loadouts \u00b7 " + SimpleDateFormat("d MMM yyyy", Locale.UK).format(Date())
+        c.drawText(stamp, W - pad - foot.measureText(stamp), H - 14f, foot)
         return bmp
     }
 
@@ -167,82 +228,119 @@ object LoadoutImage {
         c: Canvas, x: Float, y: Float, w: Float, h: Float,
         label: String, value: String, sub: String, valueColor: Int, progress: Float?,
     ) {
-        c.drawRoundRect(RectF(x, y, x + w, y + h), 14f, 14f, fill(PANEL_HIGH))
-        val lp = paint(TEAL, 18f, bold, 0.1f)
-        c.drawText(label, x + 18f, y + 32f, lp)
-        val vp = paint(valueColor, 40f, bold)
-        c.drawText(fit(value, vp, w - 36f), x + 18f, y + 78f, vp)
-        val sp = paint(MUTED, 18f)
-        if (sub.isNotBlank()) c.drawText(fit(sub, sp, w - 36f), x + 18f, y + 104f, sp)
+        c.drawRoundRect(RectF(x, y, x + w, y + h), 12f, 12f, fill(PANEL_HIGH))
+        val lp = paint(TEAL, 15f, bold, 0.1f)
+        c.drawText(label, x + 14f, y + 24f, lp)
+        val vp = paint(valueColor, 30f, bold)
+        c.drawText(fit(value, vp, w - 28f), x + 14f, y + 58f, vp)
+        val sp = paint(MUTED, 15f)
+        if (sub.isNotBlank()) c.drawText(fit(sub, sp, w - 28f), x + 14f, y + 78f, sp)
         if (progress != null) {
-            val barY = y + h - 14f
-            c.drawRoundRect(RectF(x + 18f, barY, x + w - 18f, barY + 6f), 3f, 3f, fill(0x33FFFFFF))
+            val barY = y + h - 9f
+            c.drawRoundRect(RectF(x + 14f, barY, x + w - 14f, barY + 4f), 2f, 2f, fill(0x33FFFFFF))
             val p = progress.coerceIn(0f, 1f)
             c.drawRoundRect(
-                RectF(x + 18f, barY, x + 18f + (w - 36f) * p, barY + 6f), 3f, 3f,
+                RectF(x + 14f, barY, x + 14f + (w - 28f) * p, barY + 4f), 2f, 2f,
                 fill(if (progress > 1f) BAD else TEAL),
             )
         }
     }
 
-    private fun card(c: Canvas, r: RectF, slotLabel: String, part: Part?) {
-        c.drawRoundRect(r, 14f, 14f, fill(PANEL))
-        c.drawRoundRect(r, 14f, 14f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private fun card(c: Canvas, r: RectF, slotLabel: String, part: Part?, sz: Float) {
+        c.drawRoundRect(r, 12f, 12f, fill(PANEL))
+        c.drawRoundRect(r, 12f, 12f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE; strokeWidth = 2f
             color = if (part != null) 0x40E8C547 else 0x18FFFFFF
         })
-        // accent bar on the left edge
-        c.drawRoundRect(RectF(r.left, r.top + 14f, r.left + 5f, r.bottom - 14f), 3f, 3f, fill(if (part != null) TEAL else 0x22FFFFFF))
+        c.drawRoundRect(RectF(r.left, r.top + 12f, r.left + 4f, r.bottom - 12f), 2f, 2f, fill(if (part != null) TEAL else 0x22FFFFFF))
 
-        val inner = r.left + 24f
-        val innerW = r.width() - 48f
-        val lp = paint(TEAL, 19f, bold, 0.1f)
-        c.drawText(slotLabel.uppercase(), inner, r.top + 36f, lp)
-
+        val inner = r.left + 16f
+        val innerW = r.width() - 32f
         if (part == null) {
-            val ep = paint(0x66FFFFFF, 26f)
-            c.drawText("Empty", inner, r.top + 76f, ep)
+            c.drawText(slotLabel.uppercase(), inner, r.top + 26f, paint(TEAL, 15f, bold, 0.1f))
+            c.drawText("Empty", inner, r.top + 52f, paint(0x66FFFFFF, 18f))
             return
         }
-        part.reLevel?.let {
-            val rp = paint(MUTED, 19f, bold)
-            val s = "RE $it"
-            c.drawText(s, r.right - 24f - rp.measureText(s), r.top + 36f, rp)
-        }
-        // Shrink long names a little before resorting to "…"
-        val name = part.name.ifBlank { "(unnamed)" }
-        val np = paint(GOLD, 28f, bold)
-        while (np.textSize > 21f && np.measureText(name) > innerW) np.textSize -= 1f
-        c.drawText(fit(name, np, innerW), inner, r.top + 74f, np)
 
-        // Stats in two columns
-        val lineH = 28f
-        val firstY = r.top + 112f
-        val lines = ((r.bottom - 14f - firstY) / lineH).toInt() + 1
-        if (lines <= 0) return
-        val colGap = 28f
-        val colW = (innerW - colGap) / 2
-        val labelP = paint(MUTED, 20f)
-        val valueP = paint(TEXT, 20f, bold)
-        // Fill a two-column grid; a value too long for half a card (e.g. a damage range)
-        // gets the whole row to itself.
-        var row = 0
-        var col = 0
-        for (s in orderedStats(part.stats)) {
-            val value = tidyValue(s.value)
-            val wide = valueP.measureText(value) > colW * 0.6f
-            if (wide && col == 1) { row++; col = 0 }
-            if (row >= lines) break
-            val x = inner + col * (colW + colGap)
-            val y = firstY + row * lineH
-            val w = if (wide) innerW else colW
-            val v = fit(value, valueP, w * 0.72f)
-            val vw = valueP.measureText(v)
-            c.drawText(fit(shortLabel(s.label), labelP, w - vw - 10f), x, y, labelP)
-            c.drawText(v, x + w - vw, y, valueP)
-            if (wide || col == 1) { row++; col = 0 } else col = 1
+        val (cols, placedRows) = layoutFor(cellsFor(part), innerW, r.height(), sz)
+            ?: (3 to place(cellsFor(part), 3, (innerW - 2 * sz) / 3, paint(TEXT, sz, bold)))
+        val colGap = sz
+        val colW = (innerW - (cols - 1) * colGap) / cols
+
+        // Card header: slot + RE level, then the part name
+        val lp = paint(TEAL, (sz * 0.8f).coerceAtLeast(11f), bold, 0.1f)
+        val labelBase = r.top + 10f + lp.textSize
+        c.drawText(slotLabel.uppercase(), inner, labelBase, lp)
+        part.reLevel?.let {
+            val rp = paint(MUTED, lp.textSize, bold)
+            val s = "RE $it"
+            c.drawText(s, r.right - 16f - rp.measureText(s), labelBase, rp)
+        }
+        val name = part.name.ifBlank { "(unnamed)" }
+        val np = paint(GOLD, sz * 1.25f, bold)
+        while (np.textSize > sz && np.measureText(name) > innerW) np.textSize -= 1f
+        val nameBase = labelBase + 6f + np.textSize
+        c.drawText(fit(name, np, innerW), inner, nameBase, np)
+
+        // Stats grid
+        val labelP = paint(MUTED, sz)
+        val valueP = paint(TEXT, sz, bold)
+        val qualP = paint(TEAL, sz, bold)
+        val lh = lineHeight(sz)
+        val firstBase = r.top + headerHeight(sz) + sz
+        for (pl in placedRows.first) {
+            val x = inner + pl.col * (colW + colGap)
+            val y = firstBase + pl.row * lh
+            if (y > r.bottom - 4f) continue // only possible at the very smallest size
+            val w = colW * pl.span + colGap * (pl.span - 1)
+            when (val cell = pl.cell) {
+                is SectionCell -> {
+                    val sp = paint(TEAL, (sz * 0.75f).coerceAtLeast(10f), bold, 0.12f)
+                    c.drawText("SPACE EVALUATION", x, y - sz * 0.15f, sp)
+                    val after = x + sp.measureText("SPACE EVALUATION") + 8f
+                    c.drawRect(after, y - sz * 0.4f, x + w, y - sz * 0.4f + 1f, fill(0x337FD4C1))
+                }
+                is NoteCell -> {
+                    val notep = paint(MUTED, sz)
+                    notep.textSkewX = -0.2f
+                    c.drawText(fit(cell.text, notep, w), x, y, notep)
+                }
+                is StatCell -> {
+                    val vp = if (cell.quality) qualP else valueP
+                    val v = fit(cell.value, vp, w * 0.75f)
+                    val vw = vp.measureText(v)
+                    c.drawText(fit(cell.label, labelP, w - vw - sz * 0.5f), x, y, labelP)
+                    c.drawText(v, x + w - vw, y, vp)
+                }
+            }
         }
     }
+
+    /**
+     * A grid layout for this card at text size [sz], or null if it doesn't fit: every row must fit
+     * in the card height and every label must show in full (no "…"). Tries 2 columns, then 3.
+     */
+    private fun layoutFor(cells: List<Cell>, innerW: Float, cardH: Float, sz: Float): Pair<Int, Pair<List<Placed>, Int>>? {
+        val labelP = paint(MUTED, sz)
+        val valueP = paint(TEXT, sz, bold)
+        for (cols in listOf(2, 3)) {
+            val colW = (innerW - (cols - 1) * sz) / cols
+            val placed = place(cells, cols, colW, valueP)
+            if (headerHeight(sz) + placed.second * lineHeight(sz) + 8f > cardH) continue
+            val labelsFit = placed.first.all { pl ->
+                val cell = pl.cell
+                if (cell !is StatCell) true else {
+                    val w = colW * pl.span + sz * (pl.span - 1)
+                    labelP.measureText(cell.label) + valueP.measureText(cell.value) + sz * 0.5f <= w
+                }
+            }
+            if (labelsFit) return cols to placed
+        }
+        return null
+    }
+
+    private fun lineHeight(sz: Float) = sz * 1.32f
+    private fun headerHeight(sz: Float) = 10f + (sz * 0.8f).coerceAtLeast(11f) + 6f + sz * 1.25f + sz * 0.6f
 
     class Saved(val shareUri: android.net.Uri, val inGallery: Boolean)
 
