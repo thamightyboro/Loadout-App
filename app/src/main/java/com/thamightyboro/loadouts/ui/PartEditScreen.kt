@@ -225,21 +225,25 @@ fun DeviationSection(ref: RefData, part: Part, refId: String?, onPick: (String?)
         }
         TextButton(onClick = { picking = true }) { Text("Change") }
     }
-    val rows = Deviation.evaluate(part, item)
+    val rows = Deviation.evaluate(part, item, ref)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         rows.forEach { r ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(r.label, style = MaterialTheme.typography.bodyMedium)
-                    Text("${fmtStat(r.value)}  (avg ${fmtStat(r.avg)})", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "${fmtStat(r.value)}  (avg ${fmtStat(r.avg)})  \u00b7  ${"%+.1f".format(r.goodness)} on its own",
+                        color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
+                    )
                 }
-                DeviationChip(r.goodness, r.z)
+                DeviationChip(r.rating, r.z)
             }
         }
     }
     Text(
-        "0 = average roll; past ±3 is rare. Positive is always better for you (lower mass/drain counts as positive). " +
-            "\"Check\" means the value is far outside this template's range - try Change.",
+        "Colours rate each stat against every item of the same type and RE level (best in class), as a deviation: " +
+            "4+ beats ~99.997% of all rolls in the class. \"On its own\" is the roll on this item alone. " +
+            "Lower mass/drain counts as better. \"Check\" means the value is far outside this item's range - try Change.",
         color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
     )
 
