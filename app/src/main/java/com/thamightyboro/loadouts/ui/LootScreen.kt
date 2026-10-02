@@ -435,10 +435,10 @@ fun ItemDetailDialog(item: RefItem, ref: RefData, onDismiss: () -> Unit) {
                             Text(def.label, modifier = Modifier.weight(1.3f), style = MaterialTheme.typography.bodySmall)
                             Text(fmtStat(Deviation.valueAt(st, -3 * sign)), color = Color(Deviation.band(-3.0).color), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                             Text(fmtStat(st.avg), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                            Text(fmtStat(Deviation.valueAt(st, 3 * sign)), color = Color(Deviation.band(2.5).color), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                            Text(fmtStat(Deviation.valueAt(st, 3 * sign)), color = Color(Deviation.band(3.0).color), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                             Text(
                                 if (st.uniform) "—" else fmtStat(Deviation.valueAt(st, 5 * sign)),
-                                color = Color(Deviation.band(3.0).color), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                                color = Color(Deviation.band(5.0).color), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
                             )
                         }
                     }
@@ -466,6 +466,6 @@ fun DeviationChip(goodness: Double, rawZ: Double, modifier: Modifier = Modifier)
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("%+.2f".format(goodness), color = c, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
-        Text("  ${band.label}", color = c, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(70.dp))
+        Text("  ${band.label}", color = c, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(96.dp))
     }
 }
