@@ -54,7 +54,8 @@ object DroidCommands {
     fun find(key: String?): DroidCommand? = key?.let(byKey::get)
 
     fun groupFor(slot: Slot): CommandGroup? = when {
-        slot.accepts == PartType.WEAPON -> CommandGroup.WEAPONS
+        // Weapon overload hits everything in a weapon slot, launchers included
+        slot.accepts == PartType.WEAPON || slot.accepts in Slot.launcherTypes -> CommandGroup.WEAPONS
         slot == Slot.ENGINE -> CommandGroup.ENGINE
         slot == Slot.CAPACITOR -> CommandGroup.CAPACITOR
         else -> null
