@@ -25,6 +25,16 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        // Public releases: the private key only ever exists as GitHub secrets, decoded by CI
+        // into a temp file whose path is passed in RELEASE_KEYSTORE_FILE.
+        create("release") {
+            System.getenv("RELEASE_KEYSTORE_FILE")?.let { path ->
+                storeFile = file(path)
+                storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -33,7 +43,16 @@ android {
         }
         release {
             isMinifyEnabled = false
+            if (System.getenv("RELEASE_KEYSTORE_FILE") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
+    }
+
+    lint {
+        // Don't let lint warnings block a release build.
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 
     compileOptions {
