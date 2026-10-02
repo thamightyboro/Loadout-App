@@ -47,12 +47,13 @@ object Deviation {
 
     /** Maps an examine-window label to a stat key, given the part type. */
     fun keyForLabel(label: String, type: PartType): String? {
-        val l = label.lowercase()
+        // Tolerate OCR misreads: "Vs. Arnmor", "EnergyfShot", "Energy /Shot"
+        val l = label.lowercase().replace(Regex("ar[nm]{1,2}or"), "armor")
         return when {
             "mass" in l -> "mass"
             "drain" in l || "maintenance" in l -> "drain"
             l.startsWith("vs") && "shield" in l -> "vsShields"
-            l.startsWith("vs") && "armor" in l -> "vsArmor"
+            l.startsWith("vs") -> "vsArmor"
             "shot" in l -> "energyPerShot"
             "refire" in l -> "refireRate"
             "front" in l && "shield" in l -> "shieldFront"
