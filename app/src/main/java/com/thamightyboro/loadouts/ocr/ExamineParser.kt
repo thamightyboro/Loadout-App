@@ -130,6 +130,9 @@ object ExamineParser {
             .trimStart { !it.isLetter() }          // stray quote marks / cursor debris
             .replace(Regex("""^[¥Y]s\.""", RegexOption.IGNORE_CASE), "Vs.")
             .replace(Regex("""^VWeapon"""), "Weapon")
+            // Common OCR misreads of the examine window's labels
+            .replace(Regex("""Energy\s*[/fl|1I]?\s*Shot""", RegexOption.IGNORE_CASE), "Energy/Shot")
+            .replace(Regex("""Ar[nm]{1,2}or""", RegexOption.IGNORE_CASE), "Armor")
             .trimEnd('.', ',', ' ')
 
     private fun guessName(firstRow: String): String {
