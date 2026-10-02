@@ -369,10 +369,10 @@ private fun OddsCard(type: PartType, level: Int, price: Int, itemCount: Int, p: 
 @Composable
 private fun BestStatOdds(ref: RefData, part: Part, item: RefItem) {
     val rows = remember(part, item) {
-        Deviation.evaluate(part, item).filter { r -> item.stats[r.key]?.let { it.mod > 0 } == true && abs(r.z) <= 6.0 }
+        Deviation.evaluate(part, item, ref).filter { r -> item.stats[r.key]?.let { it.mod > 0 } == true && abs(r.z) <= 6.0 }
     }
     if (rows.isEmpty()) return
-    val best = rows.maxBy { it.goodness }
+    val best = rows.maxBy { it.rating }
     var key by remember(part, item) { mutableStateOf(best.key) }
     val row = rows.firstOrNull { it.key == key } ?: best
     val vendorLv = ref.vendorLevels(item)
@@ -399,9 +399,12 @@ private fun BestStatOdds(ref: RefData, part: Part, item: RefItem) {
                 "${row.label} ${if (below) "\u2264" else "\u2265"} ${fmtStat(row.value)}",
                 style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold,
             )
-            Text("avg ${fmtStat(row.avg)}", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
+            Text(
+                "avg ${fmtStat(row.avg)}  \u00b7  ${"%+.1f".format(row.goodness)} on its own",
+                color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
+            )
         }
-        DeviationChip(row.goodness, row.z)
+        DeviationChip(row.rating, row.z)
     }
     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         items((1..10).toList()) { lv ->
