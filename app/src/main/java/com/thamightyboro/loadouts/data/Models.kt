@@ -31,6 +31,8 @@ data class Part(
     val qualities: List<StatLine> = emptyList(),
     val notes: String = "",
     val createdAt: Long = System.currentTimeMillis(),
+    /** Component template this part was matched to (for deviation ratings); null = auto-match. */
+    val refId: String? = null,
 ) {
     val mass: Double? get() = stats.numberFor("mass")
     val drain: Double? get() = stats.numberFor("energy drain")
