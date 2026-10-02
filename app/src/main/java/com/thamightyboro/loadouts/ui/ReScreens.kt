@@ -357,7 +357,8 @@ private fun ReResult(vm: AppViewModel, project: ReProject, status: ReCalc.Status
                         val st = if (key != null) item?.stats?.get(key) else null
                         if (key != null && st != null && st.mod > 0) {
                             val z = Deviation.z(st, r.result)
-                            DeviationChip(Deviation.goodness(key, z), z)
+                            val rating = item?.let { i -> ref?.let { Deviation.classGoodness(it, i, key, r.result) } } ?: Deviation.goodness(key, z)
+                            DeviationChip(rating, z)
                         }
                     }
                 }
