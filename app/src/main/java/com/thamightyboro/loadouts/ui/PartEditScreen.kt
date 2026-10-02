@@ -60,7 +60,7 @@ import androidx.compose.material3.HorizontalDivider
 import com.thamightyboro.loadouts.ocr.ExamineParser
 
 /** Default stat rows offered when adding a part by hand, so you don't have to type labels. */
-private fun templateFor(type: PartType): List<String> = when (type) {
+internal fun templateFor(type: PartType): List<String> = when (type) {
     PartType.WEAPON -> listOf("Armor", "Hitpoints", "Reactor Energy Drain", "Mass", "Damage", "Vs. Shields", "Vs. Armor", "Energy/Shot", "Refire Rate")
     PartType.ORDNANCE -> listOf("Armor", "Hitpoints", "Reactor Energy Drain", "Mass", "Damage", "Vs. Shields", "Vs. Armor", "Refire Rate", "Ammo")
     PartType.COUNTERMEASURE -> listOf("Armor", "Hitpoints", "Reactor Energy Drain", "Mass", "Refire Rate", "Ammo")
@@ -294,7 +294,7 @@ fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun StatEditor(list: SnapshotStateList<StatLine>) {
+internal fun StatEditor(list: SnapshotStateList<StatLine>) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         list.forEachIndexed { i, line ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
