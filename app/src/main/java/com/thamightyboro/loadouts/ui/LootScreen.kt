@@ -322,7 +322,7 @@ private fun ScanTab(vm: AppViewModel, ref: RefData) {
 
 /** Chance per buy and token costs for one Space Duty vendor purchase. */
 @Composable
-private fun OddsCard(type: PartType, level: Int, price: Int, itemCount: Int, p: Double) {
+private fun OddsCard(type: PartType, level: Int, price: Int, itemCount: Int, p: Double, priceCheck: Boolean = false) {
     Card(colors = CardDefaults.cardColors(containerColor = SwgColors.PanelHigh)) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
@@ -342,6 +342,18 @@ private fun OddsCard(type: PartType, level: Int, price: Int, itemCount: Int, p: 
                 )
                 Spacer6()
                 ResultLine("Average cost", "${fmtTokens(price / p)} tokens")
+                if (priceCheck) {
+                    // Restoration community rule of thumb: average token cost x 30 credits
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Text("Price check", color = SwgColors.Gold, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Text("${fmtTokens(price / p * 30)} credits", color = SwgColors.Gold, fontWeight = FontWeight.Bold)
+                    }
+                    Text(
+                        "Average token cost \u00d7 30 - the community rule of thumb, a rough guide not a fixed price.",
+                        color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer6()
+                }
                 ResultLine("50% sure", "${fmtTokens(ceil(Deviation.buysFor(p, 0.5)) * price)} tokens")
                 ResultLine("90% sure", "${fmtTokens(ceil(Deviation.buysFor(p, 0.9)) * price)} tokens")
                 ResultLine("99% sure", "${fmtTokens(ceil(Deviation.buysFor(p, 0.99)) * price)} tokens")
@@ -399,7 +411,7 @@ private fun BestStatOdds(ref: RefData, part: Part, item: RefItem) {
             )
         }
     }
-    OddsCard(item.type, level, ref.price(level), items.size, p)
+    OddsCard(item.type, level, ref.price(level), items.size, p, priceCheck = true)
     Text(
         if (vendorLv.isEmpty()) "${item.name} isn't sold by the duty vendor - odds above are for any level $level ${item.type.label.lowercase()} matching this stat."
         else "Odds cover every item the level $level vendor can give (\u2022 = levels that sell ${item.name}). " +
