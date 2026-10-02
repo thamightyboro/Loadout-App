@@ -49,6 +49,13 @@ import com.thamightyboro.loadouts.AppViewModel
 import com.thamightyboro.loadouts.data.Part
 import com.thamightyboro.loadouts.data.PartType
 import com.thamightyboro.loadouts.data.StatLine
+import com.thamightyboro.loadouts.data.Deviation
+import com.thamightyboro.loadouts.data.RefData
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.HorizontalDivider
 import com.thamightyboro.loadouts.ocr.ExamineParser
 
 /** Default stat rows offered when adding a part by hand, so you don't have to type labels. */
@@ -77,6 +84,7 @@ fun PartEditScreen(vm: AppViewModel, id: String, existing: Part?, onBack: () -> 
     var notes by remember(id) { mutableStateOf(start.notes) }
     val stats = remember(id) { mutableStateListOf<StatLine>().apply { addAll(start.stats) } }
     val qualities = remember(id) { mutableStateListOf<StatLine>().apply { addAll(start.qualities) } }
+    var refId by remember(id) { mutableStateOf(start.refId) }
     var confirmDelete by remember { mutableStateOf(false) }
     var showRaw by remember { mutableStateOf(false) }
 
@@ -89,6 +97,7 @@ fun PartEditScreen(vm: AppViewModel, id: String, existing: Part?, onBack: () -> 
                 notes = notes.trim(),
                 stats = stats.filter { it.label.isNotBlank() || it.value.isNotBlank() },
                 qualities = qualities.filter { it.label.isNotBlank() || it.value.isNotBlank() },
+                refId = refId,
             )
         )
         onBack()
@@ -147,6 +156,15 @@ fun PartEditScreen(vm: AppViewModel, id: String, existing: Part?, onBack: () -> 
             SectionTitle("Space Evaluation")
             StatEditor(qualities)
 
+            vm.ref?.let { ref ->
+                DeviationSection(
+                    ref = ref,
+                    part = Part(name = name, type = type, reLevel = reLevel.trim().toIntOrNull(), stats = stats.toList()),
+                    refId = refId,
+                    onPick = { refId = it },
+                )
+            }
+
             OutlinedTextField(
                 value = notes, onValueChange = { notes = it },
                 label = { Text("Notes") }, modifier = Modifier.fillMaxWidth(), minLines = 2,
@@ -175,6 +193,83 @@ fun PartEditScreen(vm: AppViewModel, id: String, existing: Part?, onBack: () -> 
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
         )
     }
+}
+
+/** Matches the part to its component template and rates each stat by how far it rolled from average. */
+@Composable
+private fun DeviationSection(ref: RefData, part: Part, refId: String?, onPick: (String?) -> Unit) {
+    val ranked = remember(part.stats, part.type, part.name, part.reLevel) { Deviation.rank(part, ref) }
+    val item = refId?.let(ref.byId::get) ?: ranked.firstOrNull()?.item
+    var picking by remember { mutableStateOf(false) }
+    var detail by remember { mutableStateOf(false) }
+
+    SectionTitle("Deviation rating")
+    if (item == null) {
+        Text("Add stats (mass, drain, armor…) and the app will match the part and rate each roll.", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
+        return
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).clickable { detail = true }) {
+            Text(item.name, color = SwgColors.Gold)
+            Text(
+                "${item.type.label} · RE ${item.re} · " + if (refId == null) "best match" else "chosen by you",
+                color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        TextButton(onClick = { picking = true }) { Text("Change") }
+    }
+    val rows = Deviation.evaluate(part, item)
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        rows.forEach { r ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(r.label, style = MaterialTheme.typography.bodyMedium)
+                    Text("${fmtStat(r.value)}  (avg ${fmtStat(r.avg)})", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
+                }
+                DeviationChip(r.goodness, r.z)
+            }
+        }
+        if (rows.isNotEmpty()) {
+            HorizontalDivider(color = SwgColors.PanelHigh)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Overall roll", color = SwgColors.Gold, modifier = Modifier.weight(1f))
+                DeviationChip(rows.map { it.goodness }.average(), 0.0)
+            }
+        }
+    }
+    Text(
+        "0 = average roll, ±3 = the current cap; positive is always better for you (lower mass/drain counts as positive). " +
+            "\"Check\" means the value is far outside this template's range - try Change.",
+        color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
+    )
+
+    if (picking) {
+        AlertDialog(
+            onDismissRequest = { picking = false },
+            title = { Text("Which component is this?") },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    item {
+                        Text(
+                            "Auto (best match)",
+                            color = SwgColors.Teal,
+                            modifier = Modifier.fillMaxWidth().clickable { onPick(null); picking = false }.padding(vertical = 10.dp),
+                        )
+                        HorizontalDivider()
+                    }
+                    items(ranked, key = { it.item.id }) { m ->
+                        Column(Modifier.fillMaxWidth().clickable { onPick(m.item.id); picking = false }.padding(vertical = 8.dp)) {
+                            Text(m.item.name, color = SwgColors.Gold)
+                            Text("RE ${m.item.re} · fit %.2f (lower is closer)".format(m.score), color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { picking = false }) { Text("Close") } },
+        )
+    }
+    if (detail) ItemDetailDialog(item, ref) { detail = false }
 }
 
 @Composable
