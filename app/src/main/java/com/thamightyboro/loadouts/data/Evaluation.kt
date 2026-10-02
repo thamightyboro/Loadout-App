@@ -9,16 +9,10 @@ import kotlin.math.sqrt
  * Deviation maths for ship component rolls.
  *
  * The server rolls each stat as  value = avg * (1 + z * mod / 2)  where z is a standard
- * bell-curve roll (space_crafting.randBell). z is the "deviation". Before May 2026 z was not
- * clamped (rolls of 4-5 deviations were possible, just very rare); the current SWG-Source code
- * clamps it to +/-3.
+ * bell-curve roll (space_crafting.randBell). z is the "deviation". The original code doesn't
+ * clamp it, so rolls of 4-5 deviations are possible, just very rare.
  */
 object Deviation {
-
-    enum class Mode(val label: String, val cap: Double?) {
-        ORIGINAL("Original (uncapped)", null),
-        CURRENT("Current source (capped at 3)", 3.0),
-    }
 
     data class StatDef(val key: String, val label: String, val lowerIsBetter: Boolean)
 
@@ -169,7 +163,7 @@ object Deviation {
     data class Band(val label: String, val color: Long)
 
     fun band(g: Double): Band = when {
-        g >= 3.0 -> Band("Beyond cap", 0xFFFFC94D)
+        g >= 3.0 -> Band("Exceptional", 0xFFFFC94D)
         g >= 2.0 -> Band("Superb", 0xFFC792EA)
         g >= 1.0 -> Band("Great", 0xFF5AB0FF)
         g >= 0.5 -> Band("Good", 0xFF6BD66B)
@@ -193,11 +187,8 @@ object Deviation {
     /** Standard normal CDF. */
     fun phi(z: Double): Double = 0.5 * erfc(-z / sqrt(2.0))
 
-    /**
-     * Chance this stat rolls below (or above) [threshold]. With a cap, rolls beyond it are
-     * clamped to exactly the cap value, so nothing can land past cap deviations.
-     */
-    fun chance(stat: RefStat, below: Boolean, threshold: Double, mode: Mode): Double {
+    /** Chance this stat rolls below (or above) [threshold] (original, unclamped rolls). */
+    fun chance(stat: RefStat, below: Boolean, threshold: Double): Double {
         if (stat.mod <= 0.0) return if ((stat.avg < threshold) == below) 1.0 else 0.0
         if (stat.uniform) {
             val lo = stat.avg - stat.mod
@@ -205,20 +196,7 @@ object Deviation {
             return if (below) p else 1 - p
         }
         val zt = (threshold / stat.avg - 1.0) / (stat.mod / 2.0)
-        val cap = mode.cap
-        return if (below) {
-            when {
-                cap != null && zt <= -cap -> 0.0
-                cap != null && zt > cap -> 1.0
-                else -> phi(zt)
-            }
-        } else {
-            when {
-                cap != null && zt >= cap -> 0.0
-                cap != null && zt < -cap -> 1.0
-                else -> phi(-zt)
-            }
-        }
+        return if (below) phi(zt) else phi(-zt)
     }
 
     /** Purchases needed to have [confidence] chance of at least one success. */
