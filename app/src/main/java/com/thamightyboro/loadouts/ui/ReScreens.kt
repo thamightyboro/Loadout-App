@@ -402,8 +402,9 @@ private fun ReStatLine(
         )
         if (key != null && st != null && st.mod > 0) {
             val z = Deviation.z(st, value)
-            val rating = item?.let { i -> ref?.let { Deviation.classGoodness(it, i, key, value) } } ?: Deviation.goodness(key, z)
-            DeviationChip(rating, z)
+            val classRating = item?.let { i -> ref?.let { Deviation.classGoodness(it, i, key, value) } }
+            // RE mixes items, so "Check" (far off part 1's own item) doesn't apply when rating by class.
+            DeviationChip(classRating ?: Deviation.goodness(key, z), if (classRating != null) 0.0 else z)
         }
     }
 }
