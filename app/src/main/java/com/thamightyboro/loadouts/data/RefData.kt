@@ -7,7 +7,7 @@ import org.json.JSONObject
 data class RefStat(val avg: Double, val mod: Double, val uniform: Boolean = false)
 
 data class RefItem(val id: String, val type: PartType, val re: Int, val stats: Map<String, RefStat>) {
-    val name: String = prettyName(id)
+    val name: String = RefData.prettyName(id)
 }
 
 /** Every lootable/buyable ship component and the Space Duty token vendor lists. */
