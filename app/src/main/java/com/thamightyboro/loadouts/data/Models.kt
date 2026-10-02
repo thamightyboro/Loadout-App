@@ -80,6 +80,8 @@ data class Loadout(
     val slots: Map<Slot, String> = emptyMap(), // slot -> part id
     val notes: String = "",
     val createdAt: Long = System.currentTimeMillis(),
+    /** Droid command running in each group (command key), for projected power. */
+    val droidCommands: Map<CommandGroup, String> = emptyMap(),
 ) {
     fun activeSlots(): List<Slot> =
         Slot.entries.filter { it.accepts != PartType.WEAPON } +
