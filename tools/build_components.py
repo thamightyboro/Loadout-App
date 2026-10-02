@@ -63,6 +63,12 @@ BY_TYPE = {
     ],
     "droid_interface": [("commandSpeed", "fltCommandSpeed", "fltCommandSpeedModifier", "bell")],
 }
+# Values Restoration's live tables use where they differ from SWG-Source:
+# type -> stat -> (source modifier, live modifier)
+SERVER_OVERRIDES = {
+    "armor": {"mass": (0.483, 0.433)},
+}
+
 # vendor file name -> component type
 VENDOR = {"armor": "armor", "booster": "booster", "droid_interface": "droid_interface", "engine": "engine",
           "reactor": "reactor", "shield": "shield", "weap_cap": "capacitor", "weapon": "weapon"}
@@ -94,6 +100,10 @@ for t, extra in BY_TYPE.items():
             if kind == "uniform":
                 entry.append("u")
             stats[key] = entry
+        override = SERVER_OVERRIDES.get(t, {})
+        for key, (old_mod, new_mod) in override.items():
+            if key in stats and abs(stats[key][1] - old_mod) < 1e-6:
+                stats[key][1] = new_mod
         re_level = (d.get("reverseEngineeringLevel") or "0").strip() or "0"
         items.append({"id": stem(r[0]), "type": t, "re": int(float(re_level)), "s": stats})
 
