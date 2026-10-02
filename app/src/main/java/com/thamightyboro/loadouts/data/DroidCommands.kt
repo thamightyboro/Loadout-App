@@ -8,6 +8,7 @@ package com.thamightyboro.loadouts.data
  *  - the reactor puts out  generation x generalEfficiency
  *  - weapon shots cost the capacitor  energyPerShot / energyEfficiency
  * Only one command per group is active at a time (each new one replaces the last).
+ * Efficiency commands are left out - nobody runs them.
  */
 data class DroidCommand(val key: String, val label: String, val energy: Double, val general: Double)
 
@@ -29,20 +30,12 @@ object DroidCommands {
             DroidCommand("weapons_overload_two", "Weapon Overload 2", 0.5, 1.5),
             DroidCommand("weapons_overload_three", "Weapon Overload 3", 0.35, 2.0),
             DroidCommand("weapons_overload_four", "Weapon Overload 4", 0.2, 3.0),
-            DroidCommand("weapons_efficiency_one", "Weapon Efficiency 1", 1.25, 0.75),
-            DroidCommand("weapons_efficiency_two", "Weapon Efficiency 2", 1.5, 0.5),
-            DroidCommand("weapons_efficiency_three", "Weapon Efficiency 3", 2.0, 0.25),
-            DroidCommand("weapons_efficiency_four", "Weapon Efficiency 4", 3.0, 0.1),
         ),
         CommandGroup.ENGINE to listOf(
             DroidCommand("engine_overload_one", "Engine Overload 1", 0.8, 1.1),
             DroidCommand("engine_overload_two", "Engine Overload 2", 0.6, 1.2),
             DroidCommand("engine_overload_three", "Engine Overload 3", 0.3, 1.3),
             DroidCommand("engine_overload_four", "Engine Overload 4", 0.1, 1.4),
-            DroidCommand("engine_efficiency_one", "Engine Efficiency 1", 1.25, 0.75),
-            DroidCommand("engine_efficiency_two", "Engine Efficiency 2", 1.5, 0.5),
-            DroidCommand("engine_efficiency_three", "Engine Efficiency 3", 2.0, 0.25),
-            DroidCommand("engine_efficiency_four", "Engine Efficiency 4", 3.0, 0.1),
         ),
         CommandGroup.REACTOR to listOf(
             DroidCommand("reactor_overload_one", "Reactor Overload 1", 1.0, 1.1),
