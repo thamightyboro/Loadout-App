@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -51,12 +52,13 @@ fun App(vm: AppViewModel) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
-            if (route == "parts" || route == "loadouts" || route == "loot") {
+            if (route == "parts" || route == "loadouts" || route == "loot" || route == "re") {
                 NavigationBar {
                     listOf(
                         Triple("parts", "Parts", Icons.Filled.Inventory2),
                         Triple("loadouts", "Loadouts", Icons.Filled.RocketLaunch),
                         Triple("loot", "Loot", Icons.Filled.Calculate),
+                        Triple("re", "RE", Icons.Filled.Science),
                     ).forEach { (r, label, icon) ->
                         NavigationBarItem(
                             selected = route == r,
@@ -101,6 +103,18 @@ fun App(vm: AppViewModel) {
                     )
                 }
                 composable("loot") { LootScreen(vm) }
+                composable("re") {
+                    ReProjectsScreen(projects = data.reProjects, onOpen = { nav.navigate("reproject/$it") })
+                }
+                composable("reproject/{id}") { entry ->
+                    val id = entry.arguments?.getString("id") ?: "new"
+                    ReProjectScreen(
+                        vm = vm,
+                        existing = data.reProjects.firstOrNull { it.id == id },
+                        parts = data.parts,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
                 composable("loadout/{id}") { entry ->
                     val id = entry.arguments?.getString("id") ?: "new"
                     LoadoutEditScreen(
