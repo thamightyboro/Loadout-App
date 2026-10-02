@@ -11,6 +11,8 @@ enum class PartType(val label: String) {
     DROID_INTERFACE("Droid Interface"),
     BOOSTER("Booster"),
     WEAPON("Weapon"),
+    ORDNANCE("Ordnance"),
+    COUNTERMEASURE("Countermeasure"),
     UNKNOWN("Other");
 
     companion object {
@@ -63,9 +65,13 @@ enum class Slot(val label: String, val accepts: PartType) {
     WEAPON_5("Weapon 5", PartType.WEAPON),
     WEAPON_6("Weapon 6", PartType.WEAPON),
     WEAPON_7("Weapon 7", PartType.WEAPON),
-    WEAPON_8("Weapon 8", PartType.WEAPON);
+    WEAPON_8("Weapon 8", PartType.WEAPON),
+    // Launchers sit in weapon slots in-game, but are listed on their own here.
+    ORDNANCE("Ordnance", PartType.ORDNANCE),
+    COUNTERMEASURE("Countermeasures", PartType.COUNTERMEASURE);
 
     companion object {
+        val launcherTypes = setOf(PartType.ORDNANCE, PartType.COUNTERMEASURE)
         val weapons = entries.filter { it.accepts == PartType.WEAPON }
         fun fromName(name: String): Slot? = entries.firstOrNull { it.name == name }
     }
@@ -84,8 +90,9 @@ data class Loadout(
     val droidCommands: Map<CommandGroup, String> = emptyMap(),
 ) {
     fun activeSlots(): List<Slot> =
-        Slot.entries.filter { it.accepts != PartType.WEAPON } +
-            Slot.weapons.take(weaponSlots.coerceIn(0, Slot.weapons.size))
+        Slot.entries.filter { it.accepts != PartType.WEAPON && it.accepts !in Slot.launcherTypes } +
+            Slot.weapons.take(weaponSlots.coerceIn(0, Slot.weapons.size)) +
+            listOf(Slot.ORDNANCE, Slot.COUNTERMEASURE)
 }
 
 data class LoadoutTotals(
