@@ -78,8 +78,30 @@ object Deviation {
 
     data class Reading(val key: String, val label: String, val value: Double)
 
-    private val num = Regex("""-?\d[\d,]*\.?\d*""")
-    private fun nums(s: String) = num.findAll(s).mapNotNull { it.value.replace(",", "").toDoubleOrNull() }.toList()
+    // Unsigned on purpose: in "3612.4-4450.1" the dash separates min and max, it isn't a minus sign.
+    private val num = Regex("""\d+(?:[.,]\d+)*""")
+
+    /**
+     * Reads one OCR'd number, coping with thousands separators that come through as either
+     * "," or "." ("4,450.1", "4.450.1", "4450.1" all give 4450.1).
+     */
+    internal fun parseNumber(token: String): Double? {
+        val parts = token.split(',', '.')
+        if (parts.size == 1) return token.toDoubleOrNull()
+        val last = parts.last()
+        val seps = token.filter { it == ',' || it == '.' }
+        return if (parts.size == 2 && last.length == 3 && seps == ",") {
+            (parts[0] + last).toDoubleOrNull() // "4,450" = thousands
+        } else if (parts.size == 2) {
+            "${parts[0]}.$last".toDoubleOrNull() // "0.446", "4450.1"
+        } else if (last.length == 3) {
+            parts.joinToString("").toDoubleOrNull() // "1,234,567"
+        } else {
+            (parts.dropLast(1).joinToString("") + "." + last).toDoubleOrNull() // "4.450.1" / "4,450.1"
+        }
+    }
+
+    private fun nums(s: String) = num.findAll(s).mapNotNull { parseNumber(it.value) }.toList()
 
     /** Pulls rollable stat values out of a part's examine lines. "a-b" damage gives min and max. */
     fun readings(part: Part): List<Reading> {
