@@ -229,13 +229,6 @@ fun DeviationSection(ref: RefData, part: Part, refId: String?, onPick: (String?)
                 DeviationChip(r.goodness, r.z)
             }
         }
-        if (rows.isNotEmpty()) {
-            HorizontalDivider(color = SwgColors.PanelHigh)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Overall roll", color = SwgColors.Gold, modifier = Modifier.weight(1f))
-                DeviationChip(rows.map { it.goodness }.average(), 0.0)
-            }
-        }
     }
     Text(
         "0 = average roll; past ±3 is rare. Positive is always better for you (lower mass/drain counts as positive). " +
