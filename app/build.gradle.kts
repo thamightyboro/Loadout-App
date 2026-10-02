@@ -12,8 +12,8 @@ android {
         applicationId = "com.thamightyboro.loadouts"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.4.2"
+        versionCode = 8
+        versionName = "0.4.3"
     }
 
     // Fixed key committed to the repo so every GitHub build can install over the last one
