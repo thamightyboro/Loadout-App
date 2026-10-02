@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,11 +51,12 @@ fun App(vm: AppViewModel) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
-            if (route == "parts" || route == "loadouts") {
+            if (route == "parts" || route == "loadouts" || route == "loot") {
                 NavigationBar {
                     listOf(
                         Triple("parts", "Parts", Icons.Filled.Inventory2),
                         Triple("loadouts", "Loadouts", Icons.Filled.RocketLaunch),
+                        Triple("loot", "Loot", Icons.Filled.Calculate),
                     ).forEach { (r, label, icon) ->
                         NavigationBarItem(
                             selected = route == r,
@@ -98,6 +100,7 @@ fun App(vm: AppViewModel) {
                         onOpen = { nav.navigate("loadout/$it") },
                     )
                 }
+                composable("loot") { LootScreen(vm) }
                 composable("loadout/{id}") { entry ->
                     val id = entry.arguments?.getString("id") ?: "new"
                     LoadoutEditScreen(
