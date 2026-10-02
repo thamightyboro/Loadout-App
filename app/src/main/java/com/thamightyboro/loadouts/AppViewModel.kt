@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.thamightyboro.loadouts.data.Loadout
 import com.thamightyboro.loadouts.data.Part
 import com.thamightyboro.loadouts.data.RefData
+import com.thamightyboro.loadouts.data.ReProject
 import com.thamightyboro.loadouts.data.Store
 import com.thamightyboro.loadouts.export.LoadoutImage
 import kotlinx.coroutines.Dispatchers
@@ -70,6 +71,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearChecked() { checked = null }
+
+    /** Scans an examine window and hands the part back (used by RE projects). */
+    fun scanPart(uri: Uri, onPart: (Part) -> Unit) {
+        scanning = true
+        viewModelScope.launch {
+            runCatching { Scanner.scan(getApplication(), uri) }
+                .onSuccess { (part, _) ->
+                    if (part.stats.isEmpty()) message = "Couldn't find any stats - check the photo or edit by hand."
+                    onPart(part)
+                }
+                .onFailure { message = "Scan failed: ${it.message}" }
+            scanning = false
+        }
+    }
+
+    fun saveReProject(p: ReProject) = viewModelScope.launch { store.upsertReProject(p) }
+    fun deleteReProject(id: String) = viewModelScope.launch { store.deleteReProject(id) }
 
     fun takeDraft(): Part? = draft.also { draft = null }
     fun clearRaw() { draftRawText = null }
