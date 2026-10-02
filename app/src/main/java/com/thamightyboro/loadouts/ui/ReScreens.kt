@@ -229,7 +229,7 @@ fun ReProjectScreen(vm: AppViewModel, existing: ReProject?, parts: List<Part>, o
             if (items.isNotEmpty()) {
                 SectionTitle("Parts going in")
                 items.forEachIndexed { i, p ->
-                    ReItemRow(i, p, onEdit = { editing = i to p }, onMakeFirst = if (i > 0) {
+                    ReItemRow(vm, i, p, onEdit = { editing = i to p }, onMakeFirst = if (i > 0) {
                         { items.removeAt(i); items.add(0, p) }
                     } else null)
                 }
@@ -301,19 +301,39 @@ fun ReProjectScreen(vm: AppViewModel, existing: ReProject?, parts: List<Part>, o
 }
 
 @Composable
-private fun ReItemRow(index: Int, part: Part, onEdit: () -> Unit, onMakeFirst: (() -> Unit)?) {
+private fun ReItemRow(vm: AppViewModel, index: Int, part: Part, onEdit: () -> Unit, onMakeFirst: (() -> Unit)?) {
+    var open by remember { mutableStateOf(false) }
     Card(
-        Modifier.fillMaxWidth().clickable(onClick = onEdit),
+        Modifier.fillMaxWidth().clickable { open = !open },
         colors = CardDefaults.cardColors(containerColor = SwgColors.Panel),
     ) {
         Row(Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("${index + 1}", color = SwgColors.Teal, fontWeight = FontWeight.Bold, modifier = Modifier.width(28.dp))
             Column(Modifier.weight(1f)) {
                 Text(part.name.ifBlank { "(unnamed)" }, color = SwgColors.Gold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val h = listOfNotNull(part.type.label, part.headline().ifBlank { null }).joinToString(" · ")
+                val h = listOfNotNull(part.type.label, part.headline().ifBlank { null }).joinToString(" \u00b7 ")
                 Text(h, color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Edit part") }
             if (onMakeFirst != null) IconButton(onClick = onMakeFirst) { Icon(Icons.Filled.ArrowUpward, "Make this part 1") }
+        }
+        if (open) {
+            // Pre report: this part's own rolls, rated best in class
+            val ref = vm.ref
+            val item = ref?.let { r -> part.refId?.let(r.byId::get) ?: Deviation.rank(part, r).firstOrNull()?.item }
+            Column(Modifier.padding(start = 40.dp, end = 12.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                if (item == null || ref == null) {
+                    Text("No reference data to rate this part.", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Deviation.evaluate(part, item, ref).forEach { r ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(r.label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                            Text(fmtStat(r.value) + "  ", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
+                            DeviationChip(r.rating, r.z)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -342,25 +362,17 @@ private fun ReResult(vm: AppViewModel, project: ReProject, status: ReCalc.Status
                 Text("Rated against ${item.name}", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
             }
             HorizontalDivider(color = SwgColors.Panel)
+            Text(
+                "Pre = best roll going in \u00b7 Post = after the RE bonus. Tap a part above to see its own report.",
+                color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
+            )
             rows.forEach { r ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(r.label, style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "best ${fmtStat(r.best)} from part ${r.bestIndex + 1}",
-                            color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(fmtStat(r.result), color = SwgColors.Gold, fontWeight = FontWeight.Bold)
-                        val key = r.key
-                        val st = if (key != null) item?.stats?.get(key) else null
-                        if (key != null && st != null && st.mod > 0) {
-                            val z = Deviation.z(st, r.result)
-                            val rating = item?.let { i -> ref?.let { Deviation.classGoodness(it, i, key, r.result) } } ?: Deviation.goodness(key, z)
-                            DeviationChip(rating, z)
-                        }
-                    }
+                val key = r.key
+                val st = if (key != null) item?.stats?.get(key) else null
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    Text(r.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    ReStatLine("Pre", "${fmtStat(r.best)} (part ${r.bestIndex + 1})", r.best, key, st, item, ref, false)
+                    ReStatLine("Post", fmtStat(r.result), r.result, key, st, item, ref, true)
                 }
             }
             if (rows.isEmpty()) Text("No stats read yet.", color = SwgColors.Muted)
@@ -370,6 +382,28 @@ private fun ReResult(vm: AppViewModel, project: ReProject, status: ReCalc.Status
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                 ) { Text("Save result to my parts") }
             }
+        }
+    }
+}
+
+/** One "Pre"/"Post" line: label, value and its best-in-class chip. */
+@Composable
+private fun ReStatLine(
+    tag: String, text: String, value: Double, key: String?, st: com.thamightyboro.loadouts.data.RefStat?,
+    item: com.thamightyboro.loadouts.data.RefItem?, ref: com.thamightyboro.loadouts.data.RefData?, highlight: Boolean,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(tag, color = SwgColors.Teal, style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(40.dp))
+        Text(
+            text, modifier = Modifier.weight(1f),
+            color = if (highlight) SwgColors.Gold else SwgColors.Text,
+            fontWeight = if (highlight) FontWeight.Bold else FontWeight.Normal,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (key != null && st != null && st.mod > 0) {
+            val z = Deviation.z(st, value)
+            val rating = item?.let { i -> ref?.let { Deviation.classGoodness(it, i, key, value) } } ?: Deviation.goodness(key, z)
+            DeviationChip(rating, z)
         }
     }
 }
