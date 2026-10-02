@@ -81,7 +81,7 @@ object ExamineParser {
 
         return Part(
             name = name,
-            type = guessType(stats),
+            type = guessType(stats, name),
             reLevel = reLevel,
             stats = stats,
             qualities = qualities,
@@ -144,9 +144,15 @@ object ExamineParser {
         }
     }
 
-    fun guessType(stats: List<StatLine>): PartType {
+    fun guessType(stats: List<StatLine>, name: String = ""): PartType {
         val labels = stats.joinToString("|") { it.label.lowercase() }
+        val n = name.lowercase()
         return when {
+            // Launchers: countermeasures have ammo but no damage; ordnance has both.
+            "countermeasure" in n || "chaff" in n || "flare" in n -> PartType.COUNTERMEASURE
+            "missile" in n || "torpedo" in n || "rocket" in n || "proton" in n || "concussion" in n -> PartType.ORDNANCE
+            "launcher" in n || "ammo" in labels || "ammunition" in labels ->
+                if ("damage" in labels) PartType.ORDNANCE else PartType.COUNTERMEASURE
             "refire" in labels || "energy/shot" in labels || "vs. shields" in labels -> PartType.WEAPON
             "generation" in labels -> PartType.REACTOR
             "capacitor energy" in labels -> PartType.CAPACITOR
