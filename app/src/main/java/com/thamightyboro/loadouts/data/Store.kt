@@ -14,6 +14,7 @@ import java.io.File
 data class AppData(
     val parts: List<Part> = emptyList(),
     val loadouts: List<Loadout> = emptyList(),
+    val reProjects: List<ReProject> = emptyList(),
 ) {
     val partsById: Map<String, Part> get() = parts.associateBy { it.id }
 }
@@ -70,6 +71,19 @@ class Store(context: Context) {
         save()
     }
 
+    suspend fun upsertReProject(p: ReProject) {
+        _data.update { d ->
+            val exists = d.reProjects.any { it.id == p.id }
+            d.copy(reProjects = if (exists) d.reProjects.map { if (it.id == p.id) p else it } else d.reProjects + p)
+        }
+        save()
+    }
+
+    suspend fun deleteReProject(id: String) {
+        _data.update { d -> d.copy(reProjects = d.reProjects.filterNot { it.id == id }) }
+        save()
+    }
+
     fun exportJson(): String = encode(_data.value)
 
     /** Merges an exported backup in; items with the same id are replaced. */
@@ -78,7 +92,8 @@ class Store(context: Context) {
         _data.update { d ->
             val parts = (d.parts.associateBy { it.id } + incoming.parts.associateBy { it.id }).values.toList()
             val loadouts = (d.loadouts.associateBy { it.id } + incoming.loadouts.associateBy { it.id }).values.toList()
-            AppData(parts.sortedBy { it.createdAt }, loadouts.sortedBy { it.createdAt })
+            val re = (d.reProjects.associateBy { it.id } + incoming.reProjects.associateBy { it.id }).values.toList()
+            AppData(parts.sortedBy { it.createdAt }, loadouts.sortedBy { it.createdAt }, re.sortedBy { it.createdAt })
         }
         save()
     }
@@ -88,6 +103,7 @@ class Store(context: Context) {
             put("version", 1)
             put("parts", JSONArray(d.parts.map { it.toJson() }))
             put("loadouts", JSONArray(d.loadouts.map { it.toJson() }))
+            put("reProjects", JSONArray(d.reProjects.map { it.toJson() }))
         }.toString(2)
 
         fun decode(text: String): AppData {
@@ -95,6 +111,7 @@ class Store(context: Context) {
             return AppData(
                 parts = o.optJSONArray("parts").objects().map { it.toPart() },
                 loadouts = o.optJSONArray("loadouts").objects().map { it.toLoadout() },
+                reProjects = o.optJSONArray("reProjects").objects().map { it.toReProject() },
             )
         }
 
@@ -127,6 +144,20 @@ class Store(context: Context) {
             notes = optString("notes"),
             createdAt = optLong("createdAt", System.currentTimeMillis()),
             refId = if (has("refId")) optString("refId") else null,
+        )
+
+        private fun ReProject.toJson() = JSONObject().apply {
+            put("id", id); put("name", name); put("createdAt", createdAt)
+            level?.let { put("level", it) }
+            put("items", JSONArray(items.map { it.toJson() }))
+        }
+
+        private fun JSONObject.toReProject() = ReProject(
+            id = getString("id"),
+            name = optString("name"),
+            items = optJSONArray("items").objects().map { it.toPart() },
+            level = if (has("level")) optInt("level") else null,
+            createdAt = optLong("createdAt", System.currentTimeMillis()),
         )
 
         private fun Loadout.toJson() = JSONObject().apply {
