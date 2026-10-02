@@ -70,6 +70,7 @@ object ReCalc {
 
     data class Row(
         val label: String,
+        /** Stat key for ratings (null if the app doesn't know this stat). */
         val key: String?,
         val values: List<Double?>,
         val bestIndex: Int,
@@ -78,22 +79,35 @@ object ReCalc {
         val lowerIsBetter: Boolean,
     )
 
+    /** One stat, identified so OCR spelling variants ("EnergyfShot", "Energy /Shot") group together. */
+    private data class StatId(val id: String, val label: String, val key: String?)
+
+    private fun statId(label: String, type: PartType): StatId {
+        val l = label.lowercase()
+        // Armor and Hitpoints are separate stats for RE, though both rate against the armor roll.
+        if ("hitpoint" in l || l == "hp") return StatId("hitpoints", "Hitpoints", "armor")
+        val key = Deviation.keyForLabel(label, type)
+        return if (key != null) StatId(key, Deviation.defsByKey[key]?.label ?: label, key)
+        else StatId(l.filter { it.isLetterOrDigit() }, label, null)
+    }
+
     /** The stats RE works on, read from one part's examine lines. "a-b" damage becomes min and max. */
-    private fun readings(part: Part): LinkedHashMap<String, Double> {
-        val out = LinkedHashMap<String, Double>()
+    private fun readings(part: Part, type: PartType): LinkedHashMap<StatId, Double> {
+        val out = LinkedHashMap<StatId, Double>()
         for (line in part.stats) {
             val label = line.label.trim()
             val l = label.lowercase()
             if (label.isEmpty() || "reverse engineering" in l) continue
             // Reactors don't get their drain re-rolled, it stays the template's.
-            if (part.type == PartType.REACTOR && ("drain" in l || "maintenance" in l)) continue
+            if (type == PartType.REACTOR && ("drain" in l || "maintenance" in l)) continue
             val n = Deviation.numbers(line.value)
             if (n.isEmpty()) continue
             if ("damage" in l && n.size >= 2) {
-                out["Min Damage"] = n[0]
-                out["Max Damage"] = n[1]
+                out[StatId("minDamage", "Min Damage", "minDamage")] = n[0]
+                out[StatId("maxDamage", "Max Damage", "maxDamage")] = n[1]
             } else {
-                out[label] = n.last() // "793.0/793.0" is current/max
+                val id = statId(label, type)
+                if (out.keys.none { it.id == id.id }) out[id] = n.last() // "793.0/793.0" is current/max
             }
         }
         return out
@@ -102,27 +116,22 @@ object ReCalc {
     fun rows(p: ReProject, level: Int): List<Row> {
         val type = p.items.firstOrNull()?.type ?: return emptyList()
         val b = bonus(level)
-        val perItem = p.items.map { readings(it) }
-        val labels = LinkedHashMap<String, String>() // lowercase -> display label, first appearance order
-        perItem.forEach { m -> m.keys.forEach { labels.putIfAbsent(it.lowercase(), it) } }
-        return labels.map { (lower, label) ->
-            val values = perItem.map { m -> m.entries.firstOrNull { it.key.lowercase() == lower }?.value }
-            val lowerBetter = lowerIsBetter(label)
+        val perItem = p.items.map { readings(it, type) }
+        val stats = LinkedHashMap<String, StatId>() // id -> stat, first appearance order
+        perItem.forEach { m -> m.keys.forEach { stats.putIfAbsent(it.id, it) } }
+        return stats.values.map { s ->
+            val values = perItem.map { m -> m.entries.firstOrNull { it.key.id == s.id }?.value }
+            val lowerBetter = s.key?.let { Deviation.defsByKey[it]?.lowerIsBetter } ?: lowerIsBetter(s.label)
             var bestIndex = -1
             values.forEachIndexed { i, v ->
                 if (v == null) return@forEachIndexed
-                if ("mass" in lower && v <= 0.0) return@forEachIndexed
+                if (s.id == "mass" && v <= 0.0) return@forEachIndexed
                 val cur = if (bestIndex < 0) null else values[bestIndex]
                 if (cur == null || (lowerBetter && v < cur) || (!lowerBetter && v > cur)) bestIndex = i
             }
             if (bestIndex < 0) return@map null
             val best = values[bestIndex]!!
-            val key = when (lower) {
-                "min damage" -> "minDamage"
-                "max damage" -> "maxDamage"
-                else -> Deviation.keyForLabel(label, type)
-            }
-            Row(label, key, values, bestIndex, best, if (lowerBetter) best * (1 - b) else best * (1 + b), lowerBetter)
+            Row(s.label, s.key, values, bestIndex, best, if (lowerBetter) best * (1 - b) else best * (1 + b), lowerBetter)
         }.filterNotNull()
     }
 
@@ -135,9 +144,9 @@ object ReCalc {
         val min = rows.firstOrNull { it.key == "minDamage" }
         val max = rows.firstOrNull { it.key == "maxDamage" }
         for (r in rows) {
-            when (r.key) {
-                "minDamage" -> stats += StatLine("Damage", if (max != null) "${fmt(r.result)}-${fmt(max.result)}" else fmt(r.result))
-                "maxDamage" -> if (min == null) stats += StatLine("Damage", fmt(r.result))
+            when {
+                r.key == "minDamage" -> stats += StatLine("Damage", if (max != null) "${fmt(r.result)}-${fmt(max.result)}" else fmt(r.result))
+                r.key == "maxDamage" -> if (min == null) stats += StatLine("Damage", fmt(r.result))
                 else -> stats += StatLine(r.label, fmt(r.result))
             }
         }
