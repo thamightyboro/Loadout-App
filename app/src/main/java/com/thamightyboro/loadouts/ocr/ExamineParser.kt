@@ -25,7 +25,7 @@ object ExamineParser {
     )
 
     private val valueRegex =
-        Regex("""\d[\d,]*\.?\d*(?:\s*[/\-–]\s*\d[\d,]*\.?\d*)?\s*%?""")
+        Regex("""\d+(?:[.,]\d+)*(?:\s*[/\-–]\s*\d+(?:[.,]\d+)*)?\s*%?""")
 
     fun parse(lines: List<OcrLine>): Part {
         val rows = buildRows(lines)
