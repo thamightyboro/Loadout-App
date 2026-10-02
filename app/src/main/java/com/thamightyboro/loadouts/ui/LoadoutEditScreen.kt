@@ -24,6 +24,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,7 +55,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.thamightyboro.loadouts.AppViewModel
+import com.thamightyboro.loadouts.data.CommandGroup
+import com.thamightyboro.loadouts.data.DroidCommand
+import com.thamightyboro.loadouts.data.DroidCommands
 import com.thamightyboro.loadouts.data.Loadout
+import com.thamightyboro.loadouts.data.PowerReport
+import com.thamightyboro.loadouts.data.power
 import com.thamightyboro.loadouts.data.Part
 import com.thamightyboro.loadouts.data.PartType
 import com.thamightyboro.loadouts.data.Slot
@@ -67,6 +76,7 @@ fun LoadoutEditScreen(vm: AppViewModel, existing: Loadout?, parts: List<Part>, o
     var weaponSlots by remember { mutableStateOf(start.weaponSlots) }
     var notes by remember { mutableStateOf(start.notes) }
     var slots by remember { mutableStateOf(start.slots) }
+    var commands by remember { mutableStateOf(start.droidCommands) }
     var picking by remember { mutableStateOf<Slot?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
 
@@ -78,8 +88,10 @@ fun LoadoutEditScreen(vm: AppViewModel, existing: Loadout?, parts: List<Part>, o
         weaponSlots = weaponSlots,
         slots = slots,
         notes = notes.trim(),
+        droidCommands = commands,
     )
     val totals = current.totals(byId)
+    val power = current.power(byId)
 
     fun save() {
         vm.saveLoadout(current.copy(slots = slots.filterKeys { it in current.activeSlots() }))
@@ -127,6 +139,15 @@ fun LoadoutEditScreen(vm: AppViewModel, existing: Loadout?, parts: List<Part>, o
                         fmt(totals.drain) + (gen?.let { " / ${fmt(it)} gen" } ?: ""),
                         if (drainOver) SwgColors.Bad else SwgColors.Text,
                     )
+                    if (commands.isNotEmpty()) {
+                        val pg = power.generation
+                        val pOver = pg != null && power.drain > pg
+                        TotalLine(
+                            "With droid commands",
+                            fmt(power.drain) + (pg?.let { " / ${fmt(it)} gen" } ?: ""),
+                            if (pOver) SwgColors.Bad else SwgColors.Teal,
+                        )
+                    }
                     TotalLine("Slots filled", "${totals.filled} / ${totals.total}", SwgColors.Muted)
                 }
             }
@@ -149,6 +170,8 @@ fun LoadoutEditScreen(vm: AppViewModel, existing: Loadout?, parts: List<Part>, o
                     }
                 }
             }
+
+            PowerSection(power, commands) { g, key -> commands = if (key == null) commands - g else commands + (g to key) }
 
             SectionTitle("Slots")
             current.activeSlots().forEach { slot ->
@@ -245,3 +268,104 @@ private fun SlotRow(slot: Slot, part: Part?, onClick: () -> Unit) {
 }
 
 private fun fmtPlain(v: Double): String = if (v % 1.0 == 0.0) v.toLong().toString() else v.toString()
+
+/** Projected power: reactor output vs every part's drain, with the chosen droid commands applied. */
+@Composable
+private fun PowerSection(
+    power: PowerReport,
+    commands: Map<CommandGroup, String>,
+    onPick: (CommandGroup, String?) -> Unit,
+) {
+    SectionTitle("Power & droid commands")
+    Card(colors = CardDefaults.cardColors(containerColor = SwgColors.Panel)) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            CommandGroup.entries.forEach { g ->
+                CommandPicker(g, commands[g]) { onPick(g, it) }
+            }
+            HorizontalDivider(color = SwgColors.PanelHigh)
+            val baseGen = power.baseGeneration
+            val gen = power.generation
+            if (gen == null) {
+                Text("Add a reactor to see generation.", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
+            } else {
+                TotalLine("Reactor output", if (baseGen != null && baseGen != gen) "${fmt(baseGen)} \u2192 ${fmt(gen)}" else fmt(gen), SwgColors.Text)
+            }
+            TotalLine(
+                "Total drain",
+                if (power.baseDrain != power.drain) "${fmt(power.baseDrain)} \u2192 ${fmt(power.drain)}" else fmt(power.drain),
+                SwgColors.Text,
+            )
+            power.surplus?.let { s ->
+                TotalLine(
+                    if (s >= 0) "Spare power" else "Short by",
+                    fmt(kotlin.math.abs(s)),
+                    if (s >= 0) SwgColors.Good else SwgColors.Bad,
+                )
+                if (gen != null && gen > 0) {
+                    LinearProgressIndicator(
+                        progress = { (power.drain / gen).toFloat().coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = if (s >= 0) SwgColors.Teal else SwgColors.Bad,
+                    )
+                }
+                if (s < 0) Text(
+                    "Not enough power: parts lowest in the chassis power priority run under-powered and lose performance.",
+                    color = SwgColors.Bad, style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            val changed = power.slots.filter { it.drain != it.baseDrain }
+            if (changed.isNotEmpty()) {
+                changed.forEach { r ->
+                    Row(Modifier.fillMaxWidth()) {
+                        Text(r.slot.label, color = SwgColors.Muted, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        Text("${fmt(r.baseDrain)} \u2192 ${fmt(r.drain)}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            if (power.shotCostFactor != 1.0) {
+                Text(
+                    "Weapon shots cost \u00d7${"%.2f".format(power.shotCostFactor)} capacitor energy.",
+                    color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommandPicker(group: CommandGroup, key: String?, onPick: (String?) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val current = DroidCommands.find(key)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(group.label, color = SwgColors.Teal, style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(90.dp))
+        Box(Modifier.weight(1f)) {
+            OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(current?.label ?: "None", maxLines = 1, modifier = Modifier.weight(1f))
+                Icon(Icons.Filled.ArrowDropDown, null)
+            }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                DropdownMenuItem(text = { Text("None") }, onClick = { onPick(null); open = false })
+                DroidCommands.byGroup[group].orEmpty().forEach { c ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(c.label)
+                                Text(commandEffect(group, c), color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
+                            }
+                        },
+                        onClick = { onPick(c.key); open = false },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun commandEffect(group: CommandGroup, c: DroidCommand): String {
+    val perf = "%.2f".format(c.general).trimEnd('0').trimEnd('.')
+    val drain = "%.2f".format(1.0 / c.energy).trimEnd('0').trimEnd('.')
+    return when (group) {
+        CommandGroup.REACTOR -> "Output \u00d7$perf"
+        else -> "Performance \u00d7$perf \u00b7 drain \u00d7$drain"
+    }
+}
