@@ -3,10 +3,17 @@ name: Build APK
 # - Every push to main: test build (debug-signed APK as a workflow artifact).
 # - Publishing a GitHub Release: proper release APK signed with the private key
 #   (from repo secrets) and attached to that release for players to download.
+# - Run workflow (manually) with a release tag: rebuilds that release's APK from the
+#   current main and attaches it (e.g. if a release build failed).
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing release tag to build and attach an APK to (e.g. v0.7.3). Leave empty for a test build."
+        required: false
+        default: ""
   release:
     types: [ published ]
 
@@ -16,6 +23,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -50,11 +59,11 @@ jobs:
 
       # ---- Test builds (push to main) ----
       - name: Build debug APK
-        if: github.event_name != 'release'
+        if: env.RELEASE_TAG == ''
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Upload debug APK
-        if: github.event_name != 'release'
+        if: env.RELEASE_TAG == ''
         uses: actions/upload-artifact@v4
         with:
           name: SWG-Loadouts-apk
@@ -62,7 +71,7 @@ jobs:
 
       # ---- Public releases ----
       - name: Build signed release APK
-        if: github.event_name == 'release'
+        if: env.RELEASE_TAG != ''
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
@@ -73,16 +82,29 @@ jobs:
             echo "::error::Release signing secrets are missing - add RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS and RELEASE_KEY_PASSWORD under Settings > Secrets and variables > Actions."
             exit 1
           fi
-          echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          # Pasting secrets can drag in invisible characters (non-breaking spaces, line
+          # breaks, BOMs). The generated values are plain letters/digits and base64, so
+          # strip anything else before use.
+          PW=$(printf '%s' "$RELEASE_KEYSTORE_PASSWORD" | tr -cd 'A-Za-z0-9')
+          KPW=$(printf '%s' "${RELEASE_KEY_PASSWORD:-$RELEASE_KEYSTORE_PASSWORD}" | tr -cd 'A-Za-z0-9')
+          ALIAS=$(printf '%s' "$RELEASE_KEY_ALIAS" | tr -cd 'A-Za-z0-9')
+          echo "::add-mask::$PW"
+          echo "::add-mask::$KPW"
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | tr -cd 'A-Za-z0-9+/=' | base64 -d > "$RUNNER_TEMP/release.jks"
+          if ! keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass "$PW" -alias "$ALIAS" > /dev/null 2>&1; then
+            echo "::error::The release key couldn't be opened - check RELEASE_KEYSTORE_BASE64 (the whole long line), RELEASE_KEYSTORE_PASSWORD and RELEASE_KEY_ALIAS match github-secrets.txt."
+            exit 1
+          fi
           export RELEASE_KEYSTORE_FILE="$RUNNER_TEMP/release.jks"
+          export RELEASE_KEYSTORE_PASSWORD="$PW" RELEASE_KEY_PASSWORD="$KPW" RELEASE_KEY_ALIAS="$ALIAS"
           gradle :app:assembleRelease --stacktrace
           rm -f "$RUNNER_TEMP/release.jks"
 
       - name: Attach APK to the release
-        if: github.event_name == 'release'
+        if: env.RELEASE_TAG != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ github.event.release.tag_name }}"
+          TAG="$RELEASE_TAG"
           cp app/build/outputs/apk/release/app-release.apk "SWG-Loadouts-$TAG.apk"
           gh release upload "$TAG" "SWG-Loadouts-$TAG.apk" --clobber --repo "${{ github.repository }}"
