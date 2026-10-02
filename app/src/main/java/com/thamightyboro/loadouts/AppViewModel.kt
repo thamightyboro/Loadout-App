@@ -52,6 +52,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** A part scanned on the Loot > Scan tab just to check its rolls (not saved unless asked). */
+    var checked by mutableStateOf<Part?>(null)
+        private set
+
+    fun scanToCheck(uri: Uri) {
+        scanning = true
+        viewModelScope.launch {
+            runCatching { Scanner.scan(getApplication(), uri) }
+                .onSuccess { (part, _) ->
+                    checked = part
+                    if (part.stats.isEmpty()) message = "Couldn't find any stats - check the photo."
+                }
+                .onFailure { message = "Scan failed: ${it.message}" }
+            scanning = false
+        }
+    }
+
+    fun clearChecked() { checked = null }
+
     fun takeDraft(): Part? = draft.also { draft = null }
     fun clearRaw() { draftRawText = null }
 
