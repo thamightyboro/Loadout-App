@@ -135,12 +135,17 @@ class Store(context: Context) {
             put("weaponSlots", weaponSlots)
             put("slots", JSONObject().also { s -> slots.forEach { (k, v) -> s.put(k.name, v) } })
             put("notes", notes); put("createdAt", createdAt)
+            if (droidCommands.isNotEmpty()) put("droidCommands", JSONObject().also { d -> droidCommands.forEach { (k, v) -> d.put(k.name, v) } })
         }
 
         private fun JSONObject.toLoadout(): Loadout {
             val s = optJSONObject("slots")
             val slots = buildMap {
                 s?.keys()?.forEach { k -> Slot.fromName(k)?.let { put(it, s.getString(k)) } }
+            }
+            val dc = optJSONObject("droidCommands")
+            val droidCommands = buildMap {
+                dc?.keys()?.forEach { k -> CommandGroup.fromName(k)?.let { put(it, dc.getString(k)) } }
             }
             return Loadout(
                 id = getString("id"),
@@ -151,6 +156,7 @@ class Store(context: Context) {
                 slots = slots,
                 notes = optString("notes"),
                 createdAt = optLong("createdAt", System.currentTimeMillis()),
+                droidCommands = droidCommands,
             )
         }
     }
