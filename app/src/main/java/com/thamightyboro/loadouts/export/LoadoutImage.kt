@@ -15,8 +15,12 @@ import android.provider.MediaStore
 import android.text.TextPaint
 import android.text.TextUtils
 import androidx.core.content.FileProvider
+import com.thamightyboro.loadouts.data.CommandGroup
+import com.thamightyboro.loadouts.data.DroidCommands
 import com.thamightyboro.loadouts.data.Loadout
+import com.thamightyboro.loadouts.data.power
 import com.thamightyboro.loadouts.data.Part
+import com.thamightyboro.loadouts.data.Slot
 import com.thamightyboro.loadouts.data.StatLine
 import com.thamightyboro.loadouts.data.fmt
 import com.thamightyboro.loadouts.data.totals
@@ -116,8 +120,17 @@ object LoadoutImage {
         "energy generation" to "Generation",
     )
 
-    private fun cellsFor(part: Part): List<Cell> = buildList {
-        orderedStats(part.stats).forEach { add(StatCell(shortLabel(it.label), tidyValue(it.value), false)) }
+    /** [drain]/[generation]: projected values with droid commands running (shown as "before → after"). */
+    private fun cellsFor(part: Part, drain: Pair<Double, Double>? = null, generation: Pair<Double, Double>? = null): List<Cell> = buildList {
+        orderedStats(part.stats).forEach {
+            val l = it.label.lowercase()
+            val v = when {
+                drain != null && "energy drain" in l -> "${fmt(drain.first)} \u2192 ${fmt(drain.second)}"
+                generation != null && "generation" in l -> "${fmt(generation.first)} \u2192 ${fmt(generation.second)}"
+                else -> tidyValue(it.value)
+            }
+            add(StatCell(shortLabel(it.label), v, false))
+        }
         if (part.qualities.isNotEmpty()) {
             add(SectionCell)
             part.qualities.forEach { add(StatCell(qualityLabel(it.label), it.value.trim(), true)) }
@@ -162,10 +175,21 @@ object LoadoutImage {
         val title = paint(GOLD, 46f, bold)
         c.drawText(fit(l.name.ifBlank { "Untitled loadout" }, title, 1100f), pad, 70f, title)
         val sub = paint(TEAL, 22f, bold, 0.12f)
-        c.drawText(fit(l.chassis.ifBlank { "No chassis set" }.uppercase(), sub, 1100f), pad, 104f, sub)
+        val chassisText = fit(l.chassis.ifBlank { "No chassis set" }.uppercase(), sub, 1100f)
+        c.drawText(chassisText, pad, 104f, sub)
+        val cmds = CommandGroup.entries.mapNotNull { g -> DroidCommands.find(l.droidCommands[g])?.label }
+        if (cmds.isNotEmpty()) {
+            val cp = paint(GOLD, 22f, bold, 0.06f)
+            val cx = pad + sub.measureText(chassisText) + 24f
+            c.drawText(fit("DROID: " + cmds.joinToString("  \u00b7  ").uppercase(), cp, 1140f - cx), cx, 104f, cp)
+        }
 
         // Header: summary tiles
         val t = l.totals(parts)
+        val pw = l.power(parts)
+        val drainBySlot = pw.slots.filter { it.drain != it.baseDrain }.associate { it.slot to (it.baseDrain to it.drain) }
+        val genChange = pw.baseGeneration?.let { b -> pw.generation?.takeIf { it != b }?.let { b to it } }
+        fun cells(slot: Slot, part: Part) = cellsFor(part, drainBySlot[slot], if (slot == Slot.REACTOR) genChange else null)
         val tileW = 210f
         val tileH = 94f
         val tileGap = 16f
@@ -179,13 +203,14 @@ object LoadoutImage {
             limit?.takeIf { it > 0 }?.let { (t.mass / it).toFloat() },
         )
         tx += tileW + tileGap
-        val gen = t.generation
-        val drainOver = gen != null && t.drain > gen
+        // Projected with droid commands (same as plain drain when none are set)
+        val gen = pw.generation
+        val drainOver = gen != null && pw.drain > gen
         tile(
-            c, tx, 24f, tileW, tileH, "REACTOR DRAIN", fmt(t.drain),
+            c, tx, 24f, tileW, tileH, if (cmds.isNotEmpty()) "DRAIN (DROID CMDS)" else "REACTOR DRAIN", fmt(pw.drain),
             gen?.let { "of ${fmt(it)} generated" } ?: "no reactor fitted",
             if (drainOver) BAD else TEXT,
-            gen?.takeIf { it > 0 }?.let { (t.drain / it).toFloat() },
+            gen?.takeIf { it > 0 }?.let { (pw.drain / it).toFloat() },
         )
         tx += tileW + tileGap
         tile(c, tx, 24f, tileW, tileH, "SLOTS FILLED", "${t.filled} / ${t.total}", "", TEXT, null)
@@ -203,15 +228,16 @@ object LoadoutImage {
         val cardW = (W - 2 * pad - (cols - 1) * gap) / cols
         val cardH = (bottom - top - (rows - 1) * gap) / rows
         // One text size for every card (tidier): the largest at which every card fits in full.
-        val filled = slots.mapNotNull { l.slots[it]?.let(parts::get) }
+        val cellsBySlot = slots.mapNotNull { s -> l.slots[s]?.let(parts::get)?.let { s to cells(s, it) } }.toMap()
         val innerW = cardW - 32f
         val size = (20 downTo 8).firstOrNull { sz ->
-            filled.all { layoutFor(cellsFor(it), innerW, cardH, sz.toFloat()) != null }
+            cellsBySlot.values.all { layoutFor(it, innerW, cardH, sz.toFloat()) != null }
         }?.toFloat() ?: 8f
         slots.forEachIndexed { i, slot ->
             val x = pad + (i % cols) * (cardW + gap)
             val y = top + (i / cols) * (cardH + gap)
-            card(c, RectF(x, y, x + cardW, y + cardH), slot.label, l.slots[slot]?.let(parts::get), size)
+            val part = l.slots[slot]?.let(parts::get)
+            card(c, RectF(x, y, x + cardW, y + cardH), slot.label, part, cellsBySlot[slot].orEmpty(), size)
         }
 
         // Footer
@@ -246,7 +272,7 @@ object LoadoutImage {
         }
     }
 
-    private fun card(c: Canvas, r: RectF, slotLabel: String, part: Part?, sz: Float) {
+    private fun card(c: Canvas, r: RectF, slotLabel: String, part: Part?, cells: List<Cell>, sz: Float) {
         c.drawRoundRect(r, 12f, 12f, fill(PANEL))
         c.drawRoundRect(r, 12f, 12f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE; strokeWidth = 2f
@@ -262,8 +288,8 @@ object LoadoutImage {
             return
         }
 
-        val (cols, placedRows) = layoutFor(cellsFor(part), innerW, r.height(), sz)
-            ?: (3 to place(cellsFor(part), 3, (innerW - 2 * sz) / 3, paint(TEXT, sz, bold)))
+        val (cols, placedRows) = layoutFor(cells, innerW, r.height(), sz)
+            ?: (3 to place(cells, 3, (innerW - 2 * sz) / 3, paint(TEXT, sz, bold)))
         val colGap = sz
         val colW = (innerW - (cols - 1) * colGap) / cols
 
