@@ -1,9 +1,17 @@
 name: Build APK
 
+# - Every push to main: test build (debug-signed APK as a workflow artifact).
+# - Publishing a GitHub Release: proper release APK signed with the private key
+#   (from repo secrets) and attached to that release for players to download.
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
+  release:
+    types: [ published ]
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -22,7 +30,7 @@ jobs:
 
       # The fixed debug signing key is kept as text (debug.keystore.txt) so it can be
       # edited on github.com; turn it back into the binary key file before building.
-      - name: Restore signing key
+      - name: Restore debug signing key
         run: base64 -d app/debug.keystore.txt > app/debug.keystore
 
       # Component averages/modifiers and the Space Duty vendor lists come straight from the
@@ -40,11 +48,41 @@ jobs:
       - name: Build component reference data
         run: python3 tools/build_components.py dsrc app/src/main/assets/components.json
 
+      # ---- Test builds (push to main) ----
       - name: Build debug APK
+        if: github.event_name != 'release'
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Upload debug APK
+        if: github.event_name != 'release'
         uses: actions/upload-artifact@v4
         with:
           name: SWG-Loadouts-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      # ---- Public releases ----
+      - name: Build signed release APK
+        if: github.event_name == 'release'
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ] || [ -z "$RELEASE_KEYSTORE_PASSWORD" ] || [ -z "$RELEASE_KEY_ALIAS" ]; then
+            echo "::error::Release signing secrets are missing - add RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS and RELEASE_KEY_PASSWORD under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          export RELEASE_KEYSTORE_FILE="$RUNNER_TEMP/release.jks"
+          gradle :app:assembleRelease --stacktrace
+          rm -f "$RUNNER_TEMP/release.jks"
+
+      - name: Attach APK to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          cp app/build/outputs/apk/release/app-release.apk "SWG-Loadouts-$TAG.apk"
+          gh release upload "$TAG" "SWG-Loadouts-$TAG.apk" --clobber --repo "${{ github.repository }}"
