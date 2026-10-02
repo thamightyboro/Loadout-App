@@ -175,12 +175,77 @@ object Deviation {
             .toList()
     }
 
-    data class Row(val key: String, val label: String, val value: Double, val avg: Double, val z: Double, val goodness: Double)
+    /**
+     * [goodness] is the deviation on this part's own item; [classGoodness] is the best-in-class
+     * score (see [classGoodness]). [rating] is what the colours use.
+     */
+    data class Row(
+        val key: String, val label: String, val value: Double, val avg: Double, val z: Double, val goodness: Double,
+        val classGoodness: Double? = null,
+    ) {
+        val rating: Double get() = classGoodness ?: goodness
+    }
 
-    fun evaluate(part: Part, item: RefItem): List<Row> = readings(part).mapNotNull { r ->
+    fun evaluate(part: Part, item: RefItem, ref: RefData? = null): List<Row> = readings(part).mapNotNull { r ->
         val st = item.stats[r.key] ?: return@mapNotNull null
         val zz = z(st, r.value)
-        Row(r.key, r.label, r.value, st.avg, zz, goodness(r.key, zz))
+        Row(r.key, r.label, r.value, st.avg, zz, goodness(r.key, zz), ref?.let { classGoodness(it, item, r.key, r.value) })
+    }
+
+    // ---- Best in class ----
+
+    /** Chance one roll of [stat] comes out better than [value]. */
+    fun chanceBetter(stat: RefStat, key: String, value: Double): Double {
+        val lower = defsByKey[key]?.lowerIsBetter == true
+        if (stat.mod <= 0.0 || stat.avg == 0.0) {
+            return if ((lower && stat.avg < value) || (!lower && stat.avg > value)) 1.0 else 0.0
+        }
+        if (stat.uniform) {
+            val below = ((value - (stat.avg - stat.mod)) / (2 * stat.mod)).coerceIn(0.0, 1.0)
+            return if (lower) below else 1 - below
+        }
+        val zt = z(stat, value)
+        return if (lower) phi(zt) else phi(-zt)
+    }
+
+    /** Every item of the same type and RE level - the "class" a part is rated against. */
+    fun classItems(ref: RefData, item: RefItem): List<RefItem> =
+        ref.items.filter { it.type == item.type && it.re == item.re }
+
+    /**
+     * Best-in-class score: how [value] ranks against every possible roll of every item of the
+     * same type and RE level (each item counted equally), turned back into an equivalent
+     * deviation so the usual colour bands apply. 4 = better than ~99.997% of the class.
+     */
+    fun classGoodness(ref: RefData, item: RefItem, key: String, value: Double): Double? {
+        val pool = classItems(ref, item).mapNotNull { it.stats[key] }
+        if (pool.isEmpty() || pool.all { it.mod <= 0.0 }) return null
+        val p = pool.sumOf { chanceBetter(it, key, value) } / pool.size
+        return -invPhi(p.coerceIn(1e-300, 1 - 1e-16))
+    }
+
+    /** Inverse standard normal CDF (Acklam's approximation, ~1e-9 relative error). */
+    fun invPhi(p: Double): Double {
+        val a = doubleArrayOf(-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00)
+        val b = doubleArrayOf(-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01)
+        val c = doubleArrayOf(-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00)
+        val d = doubleArrayOf(7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00)
+        val low = 0.02425
+        return when {
+            p < low -> {
+                val q = sqrt(-2 * ln(p))
+                (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1)
+            }
+            p <= 1 - low -> {
+                val q = p - 0.5
+                val r = q * q
+                (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1)
+            }
+            else -> {
+                val q = sqrt(-2 * ln(1 - p))
+                -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1)
+            }
+        }
     }
 
     // ---- Colour bands ----
