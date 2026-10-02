@@ -7,3 +7,4 @@ local.properties
 captures/
 .kotlin/
 app/debug.keystore
+app/src/main/assets/components.json
