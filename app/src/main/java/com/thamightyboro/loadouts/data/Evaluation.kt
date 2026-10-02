@@ -103,6 +103,9 @@ object Deviation {
 
     private fun nums(s: String) = num.findAll(s).mapNotNull { parseNumber(it.value) }.toList()
 
+    /** Every number in an examine value, e.g. "3612.4-4450.1" -> [3612.4, 4450.1]. */
+    fun numbers(s: String): List<Double> = nums(s)
+
     /** Pulls rollable stat values out of a part's examine lines. "a-b" damage gives min and max. */
     fun readings(part: Part): List<Reading> {
         val out = mutableListOf<Reading>()
