@@ -163,13 +163,12 @@ object Deviation {
     data class Band(val label: String, val color: Long)
 
     fun band(g: Double): Band = when {
-        g >= 3.0 -> Band("Exceptional", 0xFFFFC94D)
-        g >= 2.0 -> Band("Superb", 0xFFC792EA)
-        g >= 1.0 -> Band("Great", 0xFF5AB0FF)
-        g >= 0.5 -> Band("Good", 0xFF6BD66B)
-        g > -0.5 -> Band("Average", 0xFFB8C7C4)
-        g > -1.5 -> Band("Weak", 0xFFF0A050)
-        else -> Band("Poor", 0xFFE06C5C)
+        g >= 4.0 -> Band("Unicorn", 0xFFFF6FD8)
+        g >= 3.5 -> Band("Elite", 0xFFFF9A3C)
+        g >= 3.0 -> Band("Great", 0xFFB57BFF)
+        g >= 2.5 -> Band("Good", 0xFF5CD65C)
+        g >= 2.0 -> Band("OK", 0xFF4FA3FF)
+        else -> Band("Chassis dealer", 0xFFE0524A)
     }
 
     // ---- Probability ----
