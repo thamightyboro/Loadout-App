@@ -1,5 +1,6 @@
 package com.thamightyboro.loadouts.ocr
 
+import com.thamightyboro.loadouts.data.Deviation
 import com.thamightyboro.loadouts.data.Part
 import com.thamightyboro.loadouts.data.PartType
 import com.thamightyboro.loadouts.data.StatLine
@@ -23,6 +24,23 @@ object ExamineParser {
     private val ignoredLabels = listOf(
         "volume", "condition", "serial", "crafter", "cash", "bank", "complexity", "charges",
     )
+
+    /**
+     * Words that only appear in real ship component stat labels. Anything else the examine
+     * window shows with a number next to it (loot tags, "No Sell", evaluation %, owner info...)
+     * is dropped so it doesn't clutter the part. "Show raw scan text" still has everything.
+     */
+    private val shipStatWords = listOf(
+        "hitpoint", "armor", "mass", "drain", "maintenance", "damage", "shot", "refire", "rate",
+        "shield", "generation", "energy", "recharge", "consumption", "accel", "decel", "speed",
+        "pitch", "yaw", "roll", "command", "ammo", "ammunition", "efficiency", "capacitor", "booster",
+    )
+
+    private fun isShipStat(label: String): Boolean {
+        val l = label.lowercase()
+        if (Deviation.keyForLabel(label, PartType.UNKNOWN) != null) return true
+        return shipStatWords.any { it in l }
+    }
 
     private val valueRegex =
         Regex("""\d+(?:[.,]\d+)*(?:\s*[/\-–]\s*\d+(?:[.,]\d+)*)?\s*%?""")
@@ -75,7 +93,8 @@ object ExamineParser {
             when {
                 lower.contains("reverse engineering") -> reLevel = value.toDoubleOrNull()?.toInt()
                 lower.contains("quality") -> qualities += StatLine(label, value)
-                else -> stats += StatLine(label, value)
+                isShipStat(label) -> stats += StatLine(label, value)
+                // anything else (tags, evaluation %, etc.) isn't a component stat
             }
         }
 
