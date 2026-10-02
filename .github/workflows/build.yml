@@ -25,6 +25,21 @@ jobs:
       - name: Restore signing key
         run: base64 -d app/debug.keystore.txt > app/debug.keystore
 
+      # Component averages/modifiers and the Space Duty vendor lists come straight from the
+      # SWG-Source tables (pinned commit) and are turned into the app's components.json.
+      - name: Get SWG-Source component tables
+        uses: actions/checkout@v4
+        with:
+          repository: SWG-Source/dsrc
+          ref: e3aac29b55b46fec2ce2b1518db80a8f70d798a5
+          path: dsrc
+          sparse-checkout: |
+            sku.0/sys.server/compiled/game/datatables/ship/components
+            sku.0/sys.server/compiled/game/datatables/item/vendor/space_duty
+
+      - name: Build component reference data
+        run: python3 tools/build_components.py dsrc app/src/main/assets/components.json
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
