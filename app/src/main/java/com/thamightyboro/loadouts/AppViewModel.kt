@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.thamightyboro.loadouts.data.Loadout
 import com.thamightyboro.loadouts.data.Part
+import com.thamightyboro.loadouts.data.RefData
 import com.thamightyboro.loadouts.data.Store
 import com.thamightyboro.loadouts.export.LoadoutImage
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +20,9 @@ import kotlinx.coroutines.launch
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     val store = Store(app)
     val data = store.data
+
+    /** Component reference tables (averages, modifiers, vendor lists), bundled with the app. */
+    val ref: RefData? by lazy { RefData.load(app) }
 
     var scanning by mutableStateOf(false)
         private set
