@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.thamightyboro.loadouts.AppViewModel
 import com.thamightyboro.loadouts.data.Part
 import com.thamightyboro.loadouts.data.PartType
+import com.thamightyboro.loadouts.data.Slot
 import com.thamightyboro.loadouts.data.StatLine
 import com.thamightyboro.loadouts.data.Deviation
 import com.thamightyboro.loadouts.data.RefData
@@ -61,6 +62,8 @@ import com.thamightyboro.loadouts.ocr.ExamineParser
 /** Default stat rows offered when adding a part by hand, so you don't have to type labels. */
 private fun templateFor(type: PartType): List<String> = when (type) {
     PartType.WEAPON -> listOf("Armor", "Hitpoints", "Reactor Energy Drain", "Mass", "Damage", "Vs. Shields", "Vs. Armor", "Energy/Shot", "Refire Rate")
+    PartType.ORDNANCE -> listOf("Armor", "Hitpoints", "Reactor Energy Drain", "Mass", "Damage", "Vs. Shields", "Vs. Armor", "Refire Rate", "Ammo")
+    PartType.COUNTERMEASURE -> listOf("Armor", "Hitpoints", "Reactor Energy Drain", "Mass", "Refire Rate", "Ammo")
     PartType.REACTOR -> listOf("Armor", "Hitpoints", "Mass", "Energy Generation Rate")
     PartType.ENGINE -> listOf("Armor", "Hitpoints", "Reactor Energy Drain", "Mass", "Pitch Rate Maximum", "Yaw Rate Maximum", "Roll Rate Maximum", "Speed Maximum")
     PartType.SHIELD -> listOf("Armor", "Hitpoints", "Reactor Energy Drain", "Mass", "Front Shield Hitpoints", "Back Shield Hitpoints", "Shield Recharge Rate")
@@ -147,7 +150,7 @@ fun PartEditScreen(vm: AppViewModel, id: String, existing: Part?, onBack: () -> 
                 )
             }
             if (type == PartType.UNKNOWN && stats.isNotEmpty()) {
-                TextButton(onClick = { type = ExamineParser.guessType(stats) }) { Text("Guess type from stats") }
+                TextButton(onClick = { type = ExamineParser.guessType(stats, name) }) { Text("Guess type from stats") }
             }
 
             SectionTitle("Ship Component")
@@ -204,6 +207,10 @@ fun DeviationSection(ref: RefData, part: Part, refId: String?, onPick: (String?)
     var detail by remember { mutableStateOf(false) }
 
     SectionTitle("Deviation rating")
+    if (part.type in Slot.launcherTypes) {
+        Text("Launchers are crafted, so there's no loot table to rate them against.", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
+        return
+    }
     if (item == null) {
         Text("Add stats (mass, drain, armor…) and the app will match the part and rate each roll.", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
         return
