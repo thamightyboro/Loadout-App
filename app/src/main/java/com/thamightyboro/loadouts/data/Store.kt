@@ -114,6 +114,7 @@ class Store(context: Context) {
             reLevel?.let { put("reLevel", it) }
             put("stats", stats.toJson()); put("qualities", qualities.toJson())
             put("notes", notes); put("createdAt", createdAt)
+            refId?.let { put("refId", it) }
         }
 
         private fun JSONObject.toPart() = Part(
@@ -125,6 +126,7 @@ class Store(context: Context) {
             qualities = optJSONArray("qualities").toStats(),
             notes = optString("notes"),
             createdAt = optLong("createdAt", System.currentTimeMillis()),
+            refId = if (has("refId")) optString("refId") else null,
         )
 
         private fun Loadout.toJson() = JSONObject().apply {
