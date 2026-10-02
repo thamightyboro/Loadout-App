@@ -70,6 +70,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.thamightyboro.loadouts.AppViewModel
 import com.thamightyboro.loadouts.data.Deviation
+import com.thamightyboro.loadouts.data.Part
 import com.thamightyboro.loadouts.data.PartType
 import com.thamightyboro.loadouts.data.RefData
 import com.thamightyboro.loadouts.data.RefItem
@@ -191,33 +192,7 @@ private fun OddsTab(ref: RefData) {
                 }
             }
         }
-        item {
-            Card(colors = CardDefaults.cardColors(containerColor = SwgColors.PanelHigh)) {
-                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        "Level $level ${type.label.lowercase()} · $price tokens per buy · ${items.size} possible items",
-                        color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
-                    )
-                    if (items.isEmpty()) {
-                        Text("The vendor sells nothing at this level.", color = SwgColors.Muted)
-                    } else if (p <= 0.0) {
-                        Text("Impossible", color = SwgColors.Bad, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        Text("No item here can roll that.", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
-                    } else {
-                        Text("Chance per buy", color = SwgColors.Gold)
-                        Text(
-                            fmtChance(p) + "   (1 in ${"%,.0f".format(ceil(1 / p))})",
-                            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
-                        )
-                        Spacer6()
-                        ResultLine("Average cost", "${fmtTokens(price / p)} tokens")
-                        ResultLine("50% sure", "${fmtTokens(ceil(Deviation.buysFor(p, 0.5)) * price)} tokens")
-                        ResultLine("90% sure", "${fmtTokens(ceil(Deviation.buysFor(p, 0.9)) * price)} tokens")
-                        ResultLine("99% sure", "${fmtTokens(ceil(Deviation.buysFor(p, 0.99)) * price)} tokens")
-                    }
-                }
-            }
-        }
+        item { OddsCard(type, level, price, items.size, p) }
         if (items.isNotEmpty()) {
             item { Text("Each item (equal odds of getting any one)", color = SwgColors.Gold, style = MaterialTheme.typography.titleSmall) }
             items(perItem, key = { it.first.id }) { (item, chance) ->
@@ -326,6 +301,11 @@ private fun ScanTab(vm: AppViewModel, ref: RefData) {
             }
         }
         DeviationSection(ref, part, refId) { refId = it }
+        val matched = remember(part, refId) { refId?.let(ref.byId::get) ?: Deviation.rank(part, ref).firstOrNull()?.item }
+        if (matched != null) {
+            HorizontalDivider(color = SwgColors.PanelHigh)
+            BestStatOdds(ref, part, matched)
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
                 onClick = {
@@ -338,6 +318,94 @@ private fun ScanTab(vm: AppViewModel, ref: RefData) {
             OutlinedButton(onClick = { vm.clearChecked() }, modifier = Modifier.weight(1f)) { Text("Clear") }
         }
     }
+}
+
+/** Chance per buy and token costs for one Space Duty vendor purchase. */
+@Composable
+private fun OddsCard(type: PartType, level: Int, price: Int, itemCount: Int, p: Double) {
+    Card(colors = CardDefaults.cardColors(containerColor = SwgColors.PanelHigh)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                "Level $level ${type.label.lowercase()} \u00b7 $price tokens per buy \u00b7 $itemCount possible items",
+                color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
+            )
+            if (itemCount == 0) {
+                Text("The vendor sells nothing at this level.", color = SwgColors.Muted)
+            } else if (p <= 0.0) {
+                Text("Impossible", color = SwgColors.Bad, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text("No item here can roll that.", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text("Chance per buy", color = SwgColors.Gold)
+                Text(
+                    fmtChance(p) + "   (1 in ${"%,.0f".format(ceil(1 / p))})",
+                    style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+                )
+                Spacer6()
+                ResultLine("Average cost", "${fmtTokens(price / p)} tokens")
+                ResultLine("50% sure", "${fmtTokens(ceil(Deviation.buysFor(p, 0.5)) * price)} tokens")
+                ResultLine("90% sure", "${fmtTokens(ceil(Deviation.buysFor(p, 0.9)) * price)} tokens")
+                ResultLine("99% sure", "${fmtTokens(ceil(Deviation.buysFor(p, 0.99)) * price)} tokens")
+            }
+        }
+    }
+}
+
+/**
+ * Token odds of rolling a stat at least as good as the scanned one, from the Space Duty vendor.
+ * Defaults to the part's best stat; tap another stat to switch.
+ */
+@Composable
+private fun BestStatOdds(ref: RefData, part: Part, item: RefItem) {
+    val rows = remember(part, item) {
+        Deviation.evaluate(part, item).filter { r -> item.stats[r.key]?.let { it.mod > 0 } == true && abs(r.z) <= 6.0 }
+    }
+    if (rows.isEmpty()) return
+    val best = rows.maxBy { it.goodness }
+    var key by remember(part, item) { mutableStateOf(best.key) }
+    val row = rows.firstOrNull { it.key == key } ?: best
+    val vendorLv = ref.vendorLevels(item)
+    var level by remember(part, item) {
+        mutableStateOf(vendorLv.firstOrNull() ?: (part.reLevel ?: item.re).coerceIn(1, 10))
+    }
+    val below = Deviation.defsByKey[row.key]?.lowerIsBetter == true
+    val items = ref.vendorItems(item.type, level)
+    val p = if (items.isEmpty()) 0.0 else items.sumOf { it.stats[row.key]?.let { st -> Deviation.chance(st, below, row.value) } ?: 0.0 } / items.size
+    val pSame = item.stats[row.key]?.let { Deviation.chance(it, below, row.value) } ?: 0.0
+
+    Text("Token roll for this stat", color = SwgColors.Gold, style = MaterialTheme.typography.titleSmall)
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        items(rows, key = { it.key }) { r ->
+            FilterChip(
+                selected = r.key == row.key, onClick = { key = r.key },
+                label = { Text(r.label + if (r.key == best.key) " \u2605" else "") },
+            )
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "${row.label} ${if (below) "\u2264" else "\u2265"} ${fmtStat(row.value)}",
+                style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold,
+            )
+            Text("avg ${fmtStat(row.avg)}", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
+        }
+        DeviationChip(row.goodness, row.z)
+    }
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        items((1..10).toList()) { lv ->
+            FilterChip(
+                selected = lv == level, onClick = { level = lv },
+                label = { Text(if (lv in vendorLv) "L$lv \u2022" else "L$lv") },
+            )
+        }
+    }
+    OddsCard(item.type, level, ref.price(level), items.size, p)
+    Text(
+        if (vendorLv.isEmpty()) "${item.name} isn't sold by the duty vendor - odds above are for any level $level ${item.type.label.lowercase()} matching this stat."
+        else "Odds cover every item the level $level vendor can give (\u2022 = levels that sell ${item.name}). " +
+            "Rolling this on ${item.name} itself: ${fmtChance(pSame)} per copy.",
+        color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
+    )
 }
 
 /** Average plus the worst/best values at 3 deviations, and the best at 5. */
