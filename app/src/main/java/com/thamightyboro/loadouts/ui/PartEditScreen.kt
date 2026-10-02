@@ -197,7 +197,7 @@ fun PartEditScreen(vm: AppViewModel, id: String, existing: Part?, onBack: () -> 
 
 /** Matches the part to its component template and rates each stat by how far it rolled from average. */
 @Composable
-private fun DeviationSection(ref: RefData, part: Part, refId: String?, onPick: (String?) -> Unit) {
+fun DeviationSection(ref: RefData, part: Part, refId: String?, onPick: (String?) -> Unit) {
     val ranked = remember(part.stats, part.type, part.name, part.reLevel) { Deviation.rank(part, ref) }
     val item = refId?.let(ref.byId::get) ?: ranked.firstOrNull()?.item
     var picking by remember { mutableStateOf(false) }
@@ -238,7 +238,7 @@ private fun DeviationSection(ref: RefData, part: Part, refId: String?, onPick: (
         }
     }
     Text(
-        "0 = average roll, ±3 = the current cap; positive is always better for you (lower mass/drain counts as positive). " +
+        "0 = average roll; past ±3 is rare. Positive is always better for you (lower mass/drain counts as positive). " +
             "\"Check\" means the value is far outside this template's range - try Change.",
         color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
     )
