@@ -24,7 +24,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Image
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -100,9 +111,9 @@ fun LootScreen(vm: AppViewModel) {
             }
             TabRow(selectedTabIndex = tab, containerColor = SwgColors.Background) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Odds & tokens") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Lookup") })
+                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Scan") })
             }
-            if (tab == 0) OddsTab(ref) else LookupTab(ref)
+            if (tab == 0) OddsTab(ref) else ScanTab(vm, ref)
         }
     }
 }
@@ -112,7 +123,6 @@ private fun OddsTab(ref: RefData) {
     val types = ref.vendor.keys.sortedBy { it.ordinal }
     var type by rememberSaveable { mutableStateOf(PartType.SHIELD) }
     var level by rememberSaveable { mutableStateOf(7) }
-    var mode by rememberSaveable { mutableStateOf(Deviation.Mode.ORIGINAL) }
     val conditions = remember { mutableStateListOf(Condition("mass", true, "13000")) }
     var detail by remember { mutableStateOf<RefItem?>(null) }
 
@@ -126,7 +136,7 @@ private fun OddsTab(ref: RefData) {
     val parsed = conditions.mapNotNull { c -> c.text.replace(",", "").toDoubleOrNull()?.let { Triple(c.key, c.below, it) } }
     val perItem = items.map { item ->
         item to parsed.fold(1.0) { acc, (key, below, thr) ->
-            acc * (item.stats[key]?.let { Deviation.chance(it, below, thr, mode) } ?: 0.0)
+            acc * (item.stats[key]?.let { Deviation.chance(it, below, thr) } ?: 0.0)
         }
     }.sortedByDescending { it.second }
     val p = if (perItem.isEmpty()) 0.0 else perItem.sumOf { it.second } / perItem.size
@@ -180,11 +190,6 @@ private fun OddsTab(ref: RefData) {
                     Icon(Icons.Filled.Add, null); Text("Add condition")
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Deviation.Mode.entries.forEach { m ->
-                    FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) })
-                }
-            }
         }
         item {
             Card(colors = CardDefaults.cardColors(containerColor = SwgColors.PanelHigh)) {
@@ -197,11 +202,7 @@ private fun OddsTab(ref: RefData) {
                         Text("The vendor sells nothing at this level.", color = SwgColors.Muted)
                     } else if (p <= 0.0) {
                         Text("Impossible", color = SwgColors.Bad, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        Text(
-                            mode.cap?.let { "No item here can roll that within ${it.toInt()} deviations. Try the original (uncapped) rules." }
-                                ?: "No item here can roll that.",
-                            color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
-                        )
+                        Text("No item here can roll that.", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall)
                     } else {
                         Text("Chance per buy", color = SwgColors.Gold)
                         Text(
@@ -238,9 +239,8 @@ private fun OddsTab(ref: RefData) {
         }
         item {
             Text(
-                "Rolls: value = average × (1 + deviation × modifier ÷ 2), deviation on a bell curve. " +
-                    "Original rules let deviation run past 3 (very rarely 4–5); current SWG-Source clamps it to ±3. " +
-                    "Averages come from the SWG-Source tables, so a server that changed them will differ.",
+                "Rolls: value = average × (1 + deviation × modifier ÷ 2), deviation on an uncapped bell curve " +
+                    "(past 3 is rare, 4–5 very rare). Averages come from the SWG-Source tables, so a server that changed them will differ.",
                 color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -273,47 +273,74 @@ private fun StatPicker(defs: List<Deviation.StatDef>, key: String, modifier: Mod
     }
 }
 
+/** Scan an examine window (camera or screenshot) and see straight away how good each roll is. */
 @Composable
-private fun LookupTab(ref: RefData) {
-    var query by rememberSaveable { mutableStateOf("") }
-    var filter by rememberSaveable { mutableStateOf<PartType?>(null) }
-    var detail by remember { mutableStateOf<RefItem?>(null) }
-    val types = ref.items.map { it.type }.distinct().sortedBy { it.ordinal }
-    val words = query.lowercase().split(' ').filter { it.isNotBlank() }
-    val shown = ref.items
-        .filter { filter == null || it.type == filter }
-        .filter { item -> words.all { w -> item.name.lowercase().contains(w) || item.id.contains(w) } }
-        .sortedWith(compareBy<RefItem> { it.type.ordinal }.thenBy { it.re }.thenBy { it.name })
+private fun ScanTab(vm: AppViewModel, ref: RefData) {
+    val context = LocalContext.current
+    var pendingPhoto by rememberSaveable { mutableStateOf<Uri?>(null) }
+    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val uri = pendingPhoto
+        if (ok && uri != null) vm.scanToCheck(uri)
+    }
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) vm.scanToCheck(uri)
+    }
+    fun launchCamera() {
+        val dir = File(context.cacheDir, "scans").apply { mkdirs() }
+        val file = File(dir, "check_${System.currentTimeMillis()}.jpg")
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        pendingPhoto = uri
+        takePicture.launch(uri)
+    }
 
-    Column {
-        OutlinedTextField(
-            query, { query = it }, singleLine = true,
-            leadingIcon = { Icon(Icons.Filled.Search, null) }, placeholder = { Text("Search components") },
-            modifier = Modifier.fillMaxWidth().padding(16.dp, 12.dp, 16.dp, 0.dp),
-        )
-        LazyRow(contentPadding = PaddingValues(16.dp, 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            item { FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text("All") }) }
-            items(types) { t -> FilterChip(selected = filter == t, onClick = { filter = if (filter == t) null else t }, label = { Text(t.label) }) }
+    val checked = vm.checked
+    var refId by remember(checked) { mutableStateOf<String?>(null) }
+    var type by remember(checked) { mutableStateOf(checked?.type ?: PartType.UNKNOWN) }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp, 12.dp, 16.dp, 120.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = { launchCamera() }, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Filled.CameraAlt, null); Text("  Camera")
+            }
+            OutlinedButton(
+                onClick = { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                modifier = Modifier.weight(1f),
+            ) { Icon(Icons.Filled.Image, null); Text("  Screenshot") }
         }
-        LazyColumn(contentPadding = PaddingValues(16.dp, 0.dp, 16.dp, 120.dp)) {
-            items(shown, key = { it.id }) { item ->
-                Column(Modifier.fillMaxWidth().clickable { detail = item }.padding(vertical = 8.dp)) {
-                    Text(item.name, color = SwgColors.Gold)
-                    val lv = ref.vendorLevels(item)
-                    Text(
-                        "${item.type.label} · RE ${item.re}" + (item.stats["mass"]?.let { " · mass avg ${fmtStat(it.avg)}" } ?: "") +
-                            if (lv.isNotEmpty()) " · vendor L${lv.joinToString("/")}" else "",
-                        color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                HorizontalDivider(color = Color(0x22FFFFFF))
+        if (checked == null) {
+            Text(
+                "Scan a component's examine window to see how far each stat rolled from average - nothing is saved unless you choose to.",
+                color = SwgColors.Muted, style = MaterialTheme.typography.bodyMedium,
+            )
+            return@Column
+        }
+        val part = checked.copy(type = type)
+        Text(part.name.ifBlank { "(name not read)" }, color = SwgColors.Gold, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        part.reLevel?.let { Text("RE level $it", color = SwgColors.Muted, style = MaterialTheme.typography.bodySmall) }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(PartType.entries.filter { it != PartType.UNKNOWN }) { t ->
+                FilterChip(selected = t == type, onClick = { type = t; refId = null }, label = { Text(t.label) })
             }
         }
+        DeviationSection(ref, part, refId) { refId = it }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(
+                onClick = {
+                    vm.savePart(part.copy(refId = refId))
+                    vm.message = "Saved to your parts."
+                    vm.clearChecked()
+                },
+                modifier = Modifier.weight(1f),
+            ) { Text("Save to my parts") }
+            OutlinedButton(onClick = { vm.clearChecked() }, modifier = Modifier.weight(1f)) { Text("Clear") }
+        }
     }
-    detail?.let { ItemDetailDialog(it, ref) { detail = null } }
 }
 
-/** Average plus the worst/best values at 3 deviations (and best at 5, original rules). */
+/** Average plus the worst/best values at 3 deviations, and the best at 5. */
 @Composable
 fun ItemDetailDialog(item: RefItem, ref: RefData, onDismiss: () -> Unit) {
     AlertDialog(
@@ -328,7 +355,7 @@ fun ItemDetailDialog(item: RefItem, ref: RefData, onDismiss: () -> Unit) {
                 )
                 Row(Modifier.padding(top = 10.dp, bottom = 4.dp)) {
                     Text("Stat", color = SwgColors.Muted, modifier = Modifier.weight(1.3f), style = MaterialTheme.typography.labelSmall)
-                    listOf("Worst (3)", "Average", "Best (3)", "Best (5)").forEach {
+                    listOf("−3 dev", "Average", "+3 dev", "+5 dev").forEach {
                         Text(it, color = SwgColors.Muted, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
                     }
                 }
