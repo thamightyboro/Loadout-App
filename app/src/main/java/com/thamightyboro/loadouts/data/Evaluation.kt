@@ -3,6 +3,7 @@ package com.thamightyboro.loadouts.data
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
+import kotlin.math.ln1p
 import kotlin.math.sqrt
 
 /**
@@ -291,5 +292,5 @@ object Deviation {
 
     /** Purchases needed to have [confidence] chance of at least one success. */
     fun buysFor(p: Double, confidence: Double): Double =
-        if (p <= 0.0) Double.POSITIVE_INFINITY else if (p >= 1.0) 1.0 else ln(1 - confidence) / ln(1 - p)
+        if (p <= 0.0) Double.POSITIVE_INFINITY else if (p >= 1.0) 1.0 else ln(1 - confidence) / ln1p(-p) // ln1p keeps tiny chances from rounding to "never"
 }
