@@ -85,14 +85,29 @@ fun fmtStat(v: Double): String = when {
     else -> "%.3f".format(v)
 }
 
+/** Big numbers in words so they stay readable: 353,545,823 -> "353.5 million". */
+fun fmtBig(n: Double): String = when {
+    n.isInfinite() || n.isNaN() -> "never"
+    n >= 1e15 -> "over a quadrillion"
+    n >= 1e12 -> "%.1f trillion".format(n / 1e12)
+    n >= 1e9 -> "%.1f billion".format(n / 1e9)
+    n >= 1e6 -> "%.1f million".format(n / 1e6)
+    else -> "%,.0f".format(n)
+}
+
+/** Percent with no scientific notation ("2.80e-05%" looked like an error). */
 fun fmtChance(p: Double): String = when {
     p <= 0.0 -> "0%"
     p >= 0.9999 -> "100%"
     p >= 0.01 -> "%.2f%%".format(p * 100)
-    else -> "%.3g%%".format(p * 100)
+    p >= 1e-12 -> java.math.BigDecimal(p * 100).round(java.math.MathContext(2)).stripTrailingZeros().toPlainString() + "%"
+    else -> "practically 0%"
 }
 
-fun fmtTokens(t: Double): String = if (t.isInfinite() || t.isNaN()) "never" else "%,.0f".format(t)
+/** "1 in 3.5 million" */
+fun fmtOneIn(p: Double): String = if (p <= 0.0) "never" else "1 in " + fmtBig(ceil(1 / p))
+
+fun fmtTokens(t: Double): String = fmtBig(t)
 
 private class Condition(key: String, below: Boolean, text: String) {
     var key by mutableStateOf(key)
@@ -337,7 +352,7 @@ private fun OddsCard(type: PartType, level: Int, price: Int, itemCount: Int, p: 
             } else {
                 Text("Chance per buy", color = SwgColors.Gold)
                 Text(
-                    fmtChance(p) + "   (1 in ${"%,.0f".format(ceil(1 / p))})",
+                    fmtChance(p) + "   (${fmtOneIn(p)})",
                     style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
                 )
                 Spacer6()
