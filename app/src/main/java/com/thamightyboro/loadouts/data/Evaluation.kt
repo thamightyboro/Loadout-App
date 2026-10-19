@@ -108,12 +108,27 @@ object Deviation {
     /** Every number in an examine value, e.g. "3612.4-4450.1" -> [3612.4, 4450.1]. */
     fun numbers(s: String): List<Double> = nums(s)
 
+    // The server prints weapon damage as "%.1f-%.1f", so each number ends in exactly one decimal.
+    private val damageNum = Regex("""\d{1,3}(?:,\d{3})+\.\d|\d+\.\d""")
+    private val dotThousands = Regex("""(\d)\.(\d{3})(?=\.\d)""")
+
+    /**
+     * Min and max from a weapon "Damage" value. Copes with the OCR losing or mangling the dash
+     * ("2476.64011.8", "2476.6.4011.8", "2476.6,4011.8", "2476.6 — 4011.8") by splitting on the
+     * one-decimal pattern, and with thousands separators ("2,476.6-4,011.8", "2.476.6-4.011.8").
+     */
+    fun damageRange(s: String): List<Double> {
+        val t = dotThousands.replace(s, "\$1\$2")
+        val found = damageNum.findAll(t).mapNotNull { it.value.replace(",", "").toDoubleOrNull() }.toList()
+        return if (found.size >= 2) found.take(2) else nums(s).take(2)
+    }
+
     /** Pulls rollable stat values out of a part's examine lines. "a-b" damage gives min and max. */
     fun readings(part: Part): List<Reading> {
         val out = mutableListOf<Reading>()
         for (line in part.stats) {
             val l = line.label.lowercase()
-            val n = nums(line.value)
+            val n = if ("damage" in l) damageRange(line.value) else nums(line.value)
             if (n.isEmpty()) continue
             if ("damage" in l) {
                 out += Reading("minDamage", "Min Damage", n[0])
