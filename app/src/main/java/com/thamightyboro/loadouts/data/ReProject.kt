@@ -100,7 +100,7 @@ object ReCalc {
             if (label.isEmpty() || "reverse engineering" in l) continue
             // Reactors don't get their drain re-rolled, it stays the template's.
             if (type == PartType.REACTOR && ("drain" in l || "maintenance" in l)) continue
-            val n = Deviation.numbers(line.value)
+            val n = if ("damage" in l) Deviation.damageRange(line.value) else Deviation.numbers(line.value)
             if (n.isEmpty()) continue
             if ("damage" in l && n.size >= 2) {
                 out[StatId("minDamage", "Min Damage", "minDamage")] = n[0]
