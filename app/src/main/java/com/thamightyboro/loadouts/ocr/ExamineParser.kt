@@ -75,7 +75,13 @@ object ExamineParser {
                 if (head.lowercase().startsWith("quality")) "$pendingLabel $head" else head
             )
             pendingLabel = ""
-            var value = valueRegex.find(row.substring(colon + 1))?.value?.trim()
+            val rest = row.substring(colon + 1)
+            val found = valueRegex.find(rest)
+            var value = found?.value?.trim()
+            // Damage is "min-max"; keep the whole thing so a misread dash doesn't cut off the max.
+            if (found != null && "damage" in label.lowercase()) {
+                value = rest.substring(found.range.first).takeWhile { it.isDigit() || it in ".,-–—~ /" }.trim()
+            }
 
             // Value sometimes drops onto the next line ("Energy Maintenance Quality:" / "83.19%")
             if (value == null && i < rows.size) {
